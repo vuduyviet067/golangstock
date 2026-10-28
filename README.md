@@ -25,19 +25,36 @@ The project focuses on product CRUD operations, search, pagination, sorting, and
 - Test successful operations, invalid quantities, missing products, and concurrent stock-out requests.
 
 ## Project Structure
-
-```text
+```
 gostock/
-├── database.go
-├── main.go
-├── product.go
-├── product_handlers.go
-├── product_handlers_test.go
-├── go.mod
-├── go.sum
+├── backend/
+│   ├── main.go
+│   ├── database.go
+│   ├── health.go
+│   ├── go.mod
+│   ├── go.sum
+│   └── internal/
+│       ├── domain/
+│       │   ├── product.go
+│       │   └── product_repository.go
+│       ├── usecase/
+│       │   ├── product.go
+│       │   └── product_test.go
+│       ├── repository/
+│       │   └── postgres/
+│       │       └── product_repository.go
+│       └── handle/
+│           └── http/
+│               ├── product_handler.go
+│               ├── product_handler_test.go
+│               └── product_handler_integration_test.go
+├── frontend/
+├── deploy/
+├── docs/
+├── .env.example
+├── .gitignore
 └── README.md
 ```
-
 ## Prerequisites
 
 - Go installed
@@ -73,7 +90,9 @@ VALUES
 
 ### 2. Configure the database connection
 
-Set the `DATABASE_URL` environment variable. Replace `YOUR_PASSWORD` with your PostgreSQL password.
+Copy `.env.example` to `.env` and replace `YOUR_PASSWORD` with your local PostgreSQL password.
+
+The application reads `DATABASE_URL` from the environment. It does not automatically load `.env`, so set the variable in your terminal.
 
 For Git Bash:
 
@@ -81,88 +100,35 @@ For Git Bash:
 export DATABASE_URL='postgres://postgres:YOUR_PASSWORD@localhost:5432/gostock?sslmode=disable'
 ```
 
-Do not commit database passwords or other secrets to Git.
+Never commit real credentials to Git.
 
-### 3. Download dependencies
+### 3. Install dependencies
+
+Run these commands from the project root:
 
 ```bash
+cd backend
 go mod download
 ```
 
-### 4. Run the server
+### 4. Start the API
+
+From the `backend` directory:
 
 ```bash
 go run .
 ```
 
 The server address and port are configured in `main.go`.
-
-## API Endpoints
-
-Base path: `/api/v1`
-
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/health` | Check server health |
-| GET | `/api/v1/products` | List products |
-| GET | `/api/v1/products/{id}` | Retrieve a product |
-| POST | `/api/v1/products` | Create a product |
-| PUT | `/api/v1/products/{id}` | Update a product |
-| DELETE | `/api/v1/products/{id}` | Delete a product |
-| POST | `/api/v1/products/{id}/stock-in` | Increase stock |
-| POST | `/api/v1/products/{id}/stock-out` | Decrease stock |
-
-### Search, pagination, and sorting
-
-Example requests:
-
-```http
-GET /api/v1/products?q=mouse
-GET /api/v1/products?page=1&limit=2
-GET /api/v1/products?sortBy=price&order=asc
-```
-
-### Stock-in example
-
-```http
-POST /api/v1/products/1/stock-in
-Content-Type: application/json
-
-{
-  "quantity": 5
-}
-```
-
-### Stock-out example
-
-```http
-POST /api/v1/products/1/stock-out
-Content-Type: application/json
-
-{
-  "quantity": 3
-}
-```
-
-## Concurrency and Inventory Safety
-
-Stock-out uses a conditional SQL update:
-
-```sql
-UPDATE products
-SET quantity = quantity - $1,
-    updated_at = NOW()
-WHERE id = $2
-  AND quantity >= $1
-RETURNING id, sku, name, price, quantity;
-```
-
-The quantity check and update happen in a single SQL statement. PostgreSQL coordinates concurrent updates to the same row, helping prevent overselling and negative inventory.
-
-- `409 Conflict`: insufficient stock.
-- `404 Not Found`: product does not exist.
-
 ## Testing
+
+Run the following commands from the `backend` directory.
+
+Check Go formatting:
+
+```bash
+gofmt -l $(find . -type f -name '*.go')
+```
 
 Run all tests:
 
@@ -170,19 +136,20 @@ Run all tests:
 go test -v -count=1 ./...
 ```
 
-The current test suite covers:
+Run static analysis:
 
-- Successful stock-in and stock-out.
-- Insufficient stock.
-- Zero and negative quantities.
-- Non-existent products.
-- Concurrent stock-out requests.
+```bash
+go vet ./...
+```
 
-The integration tests require a reachable PostgreSQL database configured through `DATABASE_URL`.
+The test suite includes HTTP handler tests, use case validation tests, and PostgreSQL integration tests for concurrent stock-out requests.
+
+Integration tests require a reachable PostgreSQL database configured through `DATABASE_URL`.
 
 ## Future Improvements
 
-- Add structured logging and request timeouts.
+- Add structured logging and HTTP server timeouts.
 - Document the API with OpenAPI.
-- Expand test coverage for product CRUD, search, and pagination.
+- Expand test coverage for product listing, filtering, pagination, sorting, and error handling.
 - Configure CI to run automated tests.
+- Improve health checks by verifying database connectivity when appropriate.
