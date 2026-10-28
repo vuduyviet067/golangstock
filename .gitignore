@@ -1,0 +1,21 @@
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Go build artifacts
+/backend/gostock
+/backend/*.exe
+/backend/coverage.out
+/backend/coverage.html
+
+# Test binaries and output
+*.test
+*.out
+
+# IDE and operating system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
