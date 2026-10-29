@@ -1,9 +1,7 @@
 package main
 
 import (
-	"errors"
 	"log"
-	"net/http"
 
 	"gostock/config"
 	"gostock/internal/app"
@@ -15,8 +13,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := app.Run(cfg); err != nil &&
-		!errors.Is(err, http.ErrServerClosed) {
+	if err := app.Run(cfg); err != nil {
 		log.Fatal(err)
 	}
 }

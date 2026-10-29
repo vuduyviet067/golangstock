@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getProducts } from './services/api'
+import { useAuth } from './contexts/AuthContext'
+import { LoginView } from './components/LoginView'
 import { SearchBar } from './components/SearchBar'
 import { ProductTable } from './components/ProductTable'
 import { CreateProductModal } from './components/CreateProductModal'
@@ -9,6 +11,9 @@ import { StockModal } from './components/StockModal'
 import './App.css'
 
 export default function App() {
+  const { user, loading: authLoading, logout } = useAuth()
+  const [loggingOut, setLoggingOut] = useState(false)
+
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -56,8 +61,10 @@ export default function App() {
   }, [searchQuery, page, limit, sortBy, order])
 
   useEffect(() => {
-    fetchProducts()
-  }, [fetchProducts])
+    if (user) {
+      fetchProducts()
+    }
+  }, [fetchProducts, user])
 
   // Auto-dismiss success notification after 5 seconds
   useEffect(() => {
@@ -130,6 +137,32 @@ export default function App() {
     fetchProducts()
   }
 
+  const handleLogout = async () => {
+    try {
+      setLoggingOut(true)
+      await logout()
+    } catch (err) {
+      console.error('Logout failed:', err)
+    } finally {
+      setLoggingOut(false)
+    }
+  }
+
+  if (authLoading) {
+    return (
+      <div className="auth-loading-screen">
+        <span className="spinner" aria-hidden="true"></span>
+        <span>Đang kiểm tra phiên đăng nhập...</span>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <LoginView />
+  }
+
+  const isAdmin = Boolean(user && user.role === 'admin')
+
   return (
     <div className="app-container">
       {/* Top Header */}
@@ -145,14 +178,24 @@ export default function App() {
         </div>
 
         <div className="header-actions">
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setIsCreateModalOpen(true)}
-          >
-            <span aria-hidden="true">+</span>
-            <span>Thêm sản phẩm</span>
-          </button>
+          <div className="user-account-badge" title={`Tài khoản: ${user.email} (Vai trò: ${user.role})`}>
+            <span className="user-email-text">{user.email}</span>
+            <span className={`user-role-pill ${isAdmin ? 'role-admin' : 'role-user'}`}>
+              {user.role}
+            </span>
+          </div>
+
+          {isAdmin && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setIsCreateModalOpen(true)}
+            >
+              <span aria-hidden="true">+</span>
+              <span>Thêm sản phẩm</span>
+            </button>
+          )}
+
           <button
             type="button"
             className="btn btn-refresh"
@@ -164,6 +207,22 @@ export default function App() {
               ↻
             </span>
             <span>{refreshing ? 'Đang làm mới...' : 'Làm mới'}</span>
+          </button>
+          <button
+            type="button"
+            className="btn btn-logout"
+            onClick={handleLogout}
+            disabled={loggingOut}
+            title="Đăng xuất khỏi hệ thống"
+          >
+            {loggingOut ? (
+              <>
+                <span className="spinner" aria-hidden="true"></span>
+                <span>Đang đăng xuất...</span>
+              </>
+            ) : (
+              <span>Đăng xuất</span>
+            )}
           </button>
         </div>
       </header>
@@ -243,33 +302,36 @@ export default function App() {
           onDelete={(product) => setDeletingProduct(product)}
           onStockIn={handleStockInClick}
           onStockOut={handleStockOutClick}
+          isAdmin={isAdmin}
         />
       </main>
 
-      {/* Modal Create Product */}
-      <CreateProductModal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        onSuccess={handleProductCreated}
-      />
+      {/* Admin Modals (Create, Edit, Delete) */}
+      {isAdmin && (
+        <>
+          <CreateProductModal
+            isOpen={isCreateModalOpen}
+            onClose={() => setIsCreateModalOpen(false)}
+            onSuccess={handleProductCreated}
+          />
 
-      {/* Modal Edit Product */}
-      <EditProductModal
-        isOpen={editingProductId !== null}
-        productId={editingProductId}
-        onClose={() => setEditingProductId(null)}
-        onSuccess={handleProductUpdated}
-      />
+          <EditProductModal
+            isOpen={editingProductId !== null}
+            productId={editingProductId}
+            onClose={() => setEditingProductId(null)}
+            onSuccess={handleProductUpdated}
+          />
 
-      {/* Modal Delete Confirm */}
-      <DeleteConfirmModal
-        isOpen={deletingProduct !== null}
-        product={deletingProduct}
-        onClose={() => setDeletingProduct(null)}
-        onSuccess={handleProductDeleted}
-      />
+          <DeleteConfirmModal
+            isOpen={deletingProduct !== null}
+            product={deletingProduct}
+            onClose={() => setDeletingProduct(null)}
+            onSuccess={handleProductDeleted}
+          />
+        </>
+      )}
 
-      {/* Modal Stock In / Stock Out */}
+      {/* Modal Stock In / Stock Out (Dành cho cả User và Admin) */}
       <StockModal
         isOpen={stockModalState.isOpen}
         product={stockModalState.product}

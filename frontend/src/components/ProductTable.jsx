@@ -17,6 +17,7 @@ export function ProductTable({
   onDelete,
   onStockIn,
   onStockOut,
+  isAdmin = false,
 }) {
   const renderSortIndicator = (field) => {
     if (sortBy !== field) {
@@ -119,14 +120,16 @@ export function ProductTable({
                   </td>
                   <td className="td-actions text-center">
                     <div className="actions-group">
-                      <button
-                        type="button"
-                        className="btn-action btn-edit"
-                        onClick={() => onEdit?.(p)}
-                        title={`Chỉnh sửa thông tin ${p.name}`}
-                      >
-                        Sửa
-                      </button>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          className="btn-action btn-edit"
+                          onClick={() => onEdit?.(p)}
+                          title={`Chỉnh sửa thông tin ${p.name}`}
+                        >
+                          Sửa
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="btn-action btn-stock-in"
@@ -143,14 +146,16 @@ export function ProductTable({
                       >
                         Xuất kho
                       </button>
-                      <button
-                        type="button"
-                        className="btn-action btn-delete"
-                        onClick={() => onDelete?.(p)}
-                        title={`Xóa sản phẩm ${p.name}`}
-                      >
-                        Xóa
-                      </button>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          className="btn-action btn-delete"
+                          onClick={() => onDelete?.(p)}
+                          title={`Xóa sản phẩm ${p.name}`}
+                        >
+                          Xóa
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
