@@ -3,9 +3,10 @@ package http
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"net/http"
 	"time"
+
+	"gostock/internal/handle/http/response"
 )
 
 type ReadinessHandler struct {
@@ -24,18 +25,11 @@ func (h *ReadinessHandler) ServeHTTP(
 	defer cancel()
 
 	if err := h.db.PingContext(ctx); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"status":   "not_ready",
-			"database": "disconnected",
-		})
+		response.Error(w, http.StatusServiceUnavailable, "database disconnected")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	response.Success(w, http.StatusOK, "service is ready", map[string]string{
 		"status":   "ready",
 		"database": "connected",
 	})

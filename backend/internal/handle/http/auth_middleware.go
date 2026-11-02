@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"gostock/internal/domain"
+	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
 )
 
@@ -23,24 +24,24 @@ func AuthMiddleware(auth Authenticator) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			cookie, err := r.Cookie("session")
 			if err != nil || cookie.Value == "" {
-				writeError(w, http.StatusUnauthorized, "authentication required")
+				response.Error(w, http.StatusUnauthorized, "authentication required")
 				return
 			}
 
 			user, err := auth.Authenticate(r.Context(), cookie.Value)
 
 			if errors.Is(err, usecase.ErrInvalidSession) {
-				writeError(w, http.StatusUnauthorized, "invalid or expired session")
+				response.Error(w, http.StatusUnauthorized, "invalid or expired session")
 				return
 			}
 
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, "internal server error")
+				response.Error(w, http.StatusInternalServerError, "internal server error")
 				return
 			}
 
 			if user == nil {
-				writeError(w, http.StatusUnauthorized, "invalid or expired session")
+				response.Error(w, http.StatusUnauthorized, "invalid or expired session")
 				return
 			}
 
@@ -60,12 +61,12 @@ func RequireRole(role string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user, ok := CurrentUser(r.Context())
 			if !ok || user == nil {
-				writeError(w, http.StatusUnauthorized, "authentication required")
+				response.Error(w, http.StatusUnauthorized, "authentication required")
 				return
 			}
 
 			if user.Role != role {
-				writeError(w, http.StatusForbidden, fmt.Sprintf("forbidden: %s role required", role))
+				response.Error(w, http.StatusForbidden, fmt.Sprintf("forbidden: %s role required", role))
 				return
 			}
 

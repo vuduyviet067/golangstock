@@ -3,11 +3,13 @@ package http
 import (
 	"encoding/json"
 	"errors"
-	"gostock/internal/domain"
-	"gostock/internal/usecase"
 	"io"
 	"net/http"
 	"time"
+
+	"gostock/internal/domain"
+	"gostock/internal/handle/http/response"
+	"gostock/internal/usecase"
 )
 
 type AuthHandler struct {
@@ -46,7 +48,7 @@ type authUserResponse struct {
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -57,13 +59,13 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON request")
+		response.Error(w, http.StatusBadRequest, "invalid JSON request")
 		return
 	}
 
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "request must contain exactly one JSON object")
+		response.Error(w, http.StatusBadRequest, "request must contain exactly one JSON object")
 		return
 	}
 
@@ -71,18 +73,18 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, usecase.ErrInvalidEmail):
-			writeError(w, http.StatusBadRequest, "invalid email")
+			response.Error(w, http.StatusBadRequest, "invalid email")
 		case errors.Is(err, usecase.ErrInvalidPassword):
-			writeError(w, http.StatusBadRequest, "invalid password")
+			response.Error(w, http.StatusBadRequest, "invalid password")
 		case errors.Is(err, domain.ErrEmailExists):
-			writeError(w, http.StatusConflict, "email already exists")
+			response.Error(w, http.StatusConflict, "email already exists")
 		default:
-			writeError(w, http.StatusInternalServerError, "internal server error")
+			response.Error(w, http.StatusInternalServerError, "internal server error")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, authUserResponse{
+	response.Success(w, http.StatusCreated, "User registered successfully", authUserResponse{
 		ID:        user.ID,
 		Email:     user.Email,
 		Role:      user.Role,
@@ -93,7 +95,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -104,24 +106,24 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON request")
+		response.Error(w, http.StatusBadRequest, "invalid JSON request")
 		return
 	}
 
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "request must contain exactly one JSON object")
+		response.Error(w, http.StatusBadRequest, "request must contain exactly one JSON object")
 		return
 	}
 
 	result, err := h.useCase.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
 		if errors.Is(err, usecase.ErrInvalidCredentials) {
-			writeError(w, http.StatusUnauthorized, "invalid email or password")
+			response.Error(w, http.StatusUnauthorized, "invalid email or password")
 			return
 		}
 
-		writeError(w, http.StatusInternalServerError, "internal server error")
+		response.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
@@ -135,7 +137,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Expires:  result.ExpiresAt,
 		MaxAge:   int(time.Until(result.ExpiresAt).Seconds()),
 	})
-	writeJSON(w, http.StatusOK, loginResponse{
+	response.Success(w, http.StatusOK, "Login successful", loginResponse{
 		ID:        result.User.ID,
 		Email:     result.User.Email,
 		Role:      result.User.Role,
@@ -145,17 +147,17 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	user, ok := CurrentUser(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+		response.Error(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, authUserResponse{
+	response.Success(w, http.StatusOK, "User profile retrieved successfully", authUserResponse{
 		ID:        user.ID,
 		Email:     user.Email,
 		Role:      user.Role,
@@ -177,20 +179,20 @@ func clearSessionCookie(w http.ResponseWriter) {
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	cookie, err := r.Cookie("session")
 	if err == nil && cookie.Value != "" {
 		if err := h.useCase.Logout(r.Context(), cookie.Value); err != nil {
-			writeError(w, http.StatusInternalServerError, "could not log out")
+			response.Error(w, http.StatusInternalServerError, "could not log out")
 			return
 		}
 	}
 
 	clearSessionCookie(w)
-	writeJSON(w, http.StatusOK, map[string]string{
+	response.Success(w, http.StatusOK, "logged out", map[string]string{
 		"message": "logged out",
 	})
 }

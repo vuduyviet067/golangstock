@@ -163,14 +163,14 @@ func TestGetByID(t *testing.T) {
 			method:         http.MethodGet,
 			path:           "/api/v1/products/abc",
 			wantStatus:     http.StatusBadRequest,
-			wantBodyString: `"error":"invalid product ID"`,
+			wantBodyString: `"message":"invalid product ID"`,
 		},
 		{
 			name:           "zero ID",
 			method:         http.MethodGet,
 			path:           "/api/v1/products/0",
 			wantStatus:     http.StatusBadRequest,
-			wantBodyString: `"error":"invalid product ID"`,
+			wantBodyString: `"message":"invalid product ID"`,
 		},
 		{
 			name:           "product not found",
@@ -178,7 +178,7 @@ func TestGetByID(t *testing.T) {
 			path:           "/api/v1/products/99",
 			repoErr:        domain.ErrProductNotFound,
 			wantStatus:     http.StatusNotFound,
-			wantBodyString: `"error":"Product not found"`,
+			wantBodyString: `"message":"Product not found"`,
 		},
 		{
 			name:           "repository internal error",
@@ -186,14 +186,14 @@ func TestGetByID(t *testing.T) {
 			path:           "/api/v1/products/1",
 			repoErr:        errors.New("database connection failed"),
 			wantStatus:     http.StatusInternalServerError,
-			wantBodyString: `"error":"Internal server error"`,
+			wantBodyString: `"message":"Internal server error"`,
 		},
 		{
 			name:           "wrong HTTP method",
 			method:         http.MethodPost,
 			path:           "/api/v1/products/1",
 			wantStatus:     http.StatusMethodNotAllowed,
-			wantBodyString: `"error":"method not allowed"`,
+			wantBodyString: `"message":"method not allowed"`,
 			wantAllow:      http.MethodGet,
 		},
 		{
@@ -201,7 +201,7 @@ func TestGetByID(t *testing.T) {
 			method:         http.MethodGet,
 			path:           "/api/v1/products/1/stock-in",
 			wantStatus:     http.StatusBadRequest,
-			wantBodyString: `"error":"invalid product ID"`,
+			wantBodyString: `"message":"invalid product ID"`,
 		},
 	}
 
@@ -359,35 +359,35 @@ func TestCreate(t *testing.T) {
 			method:     http.MethodPost,
 			body:       `{"sku":`,
 			wantStatus: http.StatusBadRequest,
-			wantBody:   `"error":"Invalid JSON request"`,
+			wantBody:   `"message":"Invalid JSON request"`,
 		},
 		{
 			name:       "unknown field",
 			method:     http.MethodPost,
 			body:       `{"sku":"SKU001","name":"Keyboard","unknown":"value"}`,
 			wantStatus: http.StatusBadRequest,
-			wantBody:   `"error":"Invalid JSON request"`,
+			wantBody:   `"message":"Invalid JSON request"`,
 		},
 		{
 			name:       "trailing JSON object",
 			method:     http.MethodPost,
 			body:       `{"sku":"SKU001","name":"Keyboard"} {"sku":"SKU002"}`,
 			wantStatus: http.StatusBadRequest,
-			wantBody:   `"error":"Request must contain one JSON object"`,
+			wantBody:   `"message":"Request must contain one JSON object"`,
 		},
 		{
 			name:       "missing SKU",
 			method:     http.MethodPost,
 			body:       `{"name":"Keyboard","price":100,"quantity":5}`,
 			wantStatus: http.StatusBadRequest,
-			wantBody:   `"error":"Invalid product"`,
+			wantBody:   `"message":"Invalid product"`,
 		},
 		{
 			name:       "negative price",
 			method:     http.MethodPost,
 			body:       `{"sku":"SKU001","name":"Keyboard","price":-1,"quantity":5}`,
 			wantStatus: http.StatusBadRequest,
-			wantBody:   `"error":"Invalid product"`,
+			wantBody:   `"message":"Invalid product"`,
 		},
 		{
 			name:       "duplicate SKU",
@@ -395,7 +395,7 @@ func TestCreate(t *testing.T) {
 			body:       `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
 			createErr:  domain.ErrProductSKUExists,
 			wantStatus: http.StatusConflict,
-			wantBody:   `"error":"SKU already exists"`,
+			wantBody:   `"message":"SKU already exists"`,
 		},
 		{
 			name:       "repository error",
@@ -403,14 +403,14 @@ func TestCreate(t *testing.T) {
 			body:       `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
 			createErr:  errors.New("database connection failed"),
 			wantStatus: http.StatusInternalServerError,
-			wantBody:   `"error":"Internal server error"`,
+			wantBody:   `"message":"Internal server error"`,
 		},
 		{
 			name:       "wrong HTTP method",
 			method:     http.MethodGet,
 			body:       `{}`,
 			wantStatus: http.StatusMethodNotAllowed,
-			wantBody:   `"error":"method not allowed"`,
+			wantBody:   `"message":"method not allowed"`,
 			wantAllow:  http.MethodPost,
 		},
 	}
@@ -497,7 +497,7 @@ func TestUpdate(t *testing.T) {
 			path:           "/api/v1/products/abc",
 			body:           `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
 			wantStatus:     http.StatusBadRequest,
-			wantBodyString: `"error":"invalid product ID"`,
+			wantBodyString: `"message":"invalid product ID"`,
 		},
 		{
 			name:           "zero ID",
@@ -505,7 +505,7 @@ func TestUpdate(t *testing.T) {
 			path:           "/api/v1/products/0",
 			body:           `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
 			wantStatus:     http.StatusBadRequest,
-			wantBodyString: `"error":"invalid product ID"`,
+			wantBodyString: `"message":"invalid product ID"`,
 		},
 		{
 			name:           "invalid JSON",
@@ -513,7 +513,7 @@ func TestUpdate(t *testing.T) {
 			path:           "/api/v1/products/1",
 			body:           `{"sku":`,
 			wantStatus:     http.StatusBadRequest,
-			wantBodyString: `"error":"Invalid JSON request"`,
+			wantBodyString: `"message":"Invalid JSON request"`,
 		},
 		{
 			name:           "invalid product",
@@ -521,7 +521,7 @@ func TestUpdate(t *testing.T) {
 			path:           "/api/v1/products/1",
 			body:           `{"sku":"","name":"Keyboard","price":100,"quantity":5}`,
 			wantStatus:     http.StatusBadRequest,
-			wantBodyString: `"error":"Invalid product"`,
+			wantBodyString: `"message":"Invalid product"`,
 		},
 		{
 			name:           "product not found",
@@ -530,7 +530,7 @@ func TestUpdate(t *testing.T) {
 			body:           `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
 			repoErr:        domain.ErrProductNotFound,
 			wantStatus:     http.StatusNotFound,
-			wantBodyString: `"error":"Product not found"`,
+			wantBodyString: `"message":"Product not found"`,
 		},
 		{
 			name:           "duplicate SKU",
@@ -539,7 +539,7 @@ func TestUpdate(t *testing.T) {
 			body:           `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
 			repoErr:        domain.ErrProductSKUExists,
 			wantStatus:     http.StatusConflict,
-			wantBodyString: `"error":"SKU already exists"`,
+			wantBodyString: `"message":"SKU already exists"`,
 		},
 		{
 			name:           "repository internal error",
@@ -548,7 +548,7 @@ func TestUpdate(t *testing.T) {
 			body:           `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
 			repoErr:        errors.New("database connection failed"),
 			wantStatus:     http.StatusInternalServerError,
-			wantBodyString: `"error":"Internal server error"`,
+			wantBodyString: `"message":"Internal server error"`,
 		},
 		{
 			name:           "wrong HTTP method",
@@ -556,7 +556,7 @@ func TestUpdate(t *testing.T) {
 			path:           "/api/v1/products/1",
 			body:           `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
 			wantStatus:     http.StatusMethodNotAllowed,
-			wantBodyString: `"error":"method not allowed"`,
+			wantBodyString: `"message":"method not allowed"`,
 			wantAllow:      http.MethodPut,
 		},
 		{
@@ -565,7 +565,7 @@ func TestUpdate(t *testing.T) {
 			path:           "/api/v1/products/1/stock-in",
 			body:           `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
 			wantStatus:     http.StatusBadRequest,
-			wantBodyString: `"error":"invalid product ID"`,
+			wantBodyString: `"message":"invalid product ID"`,
 		},
 	}
 
@@ -663,14 +663,14 @@ func TestDelete(t *testing.T) {
 			method:     http.MethodDelete,
 			path:       "/api/v1/products/abc",
 			wantStatus: http.StatusBadRequest,
-			wantBody:   `"error":"invalid product ID"`,
+			wantBody:   `"message":"invalid product ID"`,
 		},
 		{
 			name:       "zero ID",
 			method:     http.MethodDelete,
 			path:       "/api/v1/products/0",
 			wantStatus: http.StatusBadRequest,
-			wantBody:   `"error":"invalid product ID"`,
+			wantBody:   `"message":"invalid product ID"`,
 		},
 		{
 			name:       "product not found",
@@ -678,7 +678,7 @@ func TestDelete(t *testing.T) {
 			path:       "/api/v1/products/99",
 			deleteErr:  domain.ErrProductNotFound,
 			wantStatus: http.StatusNotFound,
-			wantBody:   `"error":"Product not found"`,
+			wantBody:   `"message":"Product not found"`,
 		},
 		{
 			name:       "repository internal error",
@@ -686,14 +686,14 @@ func TestDelete(t *testing.T) {
 			path:       "/api/v1/products/1",
 			deleteErr:  errors.New("database connection failed"),
 			wantStatus: http.StatusInternalServerError,
-			wantBody:   `"error":"Internal server error"`,
+			wantBody:   `"message":"Internal server error"`,
 		},
 		{
 			name:       "wrong HTTP method",
 			method:     http.MethodPost,
 			path:       "/api/v1/products/1",
 			wantStatus: http.StatusMethodNotAllowed,
-			wantBody:   `"error":"method not allowed"`,
+			wantBody:   `"message":"method not allowed"`,
 			wantAllow:  http.MethodDelete,
 		},
 		{
@@ -701,7 +701,7 @@ func TestDelete(t *testing.T) {
 			method:     http.MethodDelete,
 			path:       "/api/v1/products/1/stock-in",
 			wantStatus: http.StatusBadRequest,
-			wantBody:   `"error":"invalid product ID"`,
+			wantBody:   `"message":"invalid product ID"`,
 		},
 	}
 
@@ -778,7 +778,7 @@ func TestStockIn(t *testing.T) {
 			path:       "/api/v1/products/abc/stock-in",
 			body:       `{"quantity":10}`,
 			wantStatus: http.StatusBadRequest,
-			wantBody:   `"error":"invalid product ID"`,
+			wantBody:   `"message":"invalid product ID"`,
 		},
 		{
 			name:       "zero quantity",
@@ -786,7 +786,7 @@ func TestStockIn(t *testing.T) {
 			path:       "/api/v1/products/1/stock-in",
 			body:       `{"quantity":0}`,
 			wantStatus: http.StatusBadRequest,
-			wantBody:   `"error":"quantity must be greater than 0"`,
+			wantBody:   `"message":"quantity must be greater than 0"`,
 		},
 		{
 			name:       "negative quantity",
@@ -794,7 +794,7 @@ func TestStockIn(t *testing.T) {
 			path:       "/api/v1/products/1/stock-in",
 			body:       `{"quantity":-2}`,
 			wantStatus: http.StatusBadRequest,
-			wantBody:   `"error":"quantity must be greater than 0"`,
+			wantBody:   `"message":"quantity must be greater than 0"`,
 		},
 		{
 			name:       "invalid JSON",
@@ -802,7 +802,7 @@ func TestStockIn(t *testing.T) {
 			path:       "/api/v1/products/1/stock-in",
 			body:       `{"quantity":`,
 			wantStatus: http.StatusBadRequest,
-			wantBody:   `"error":"Invalid JSON body"`,
+			wantBody:   `"message":"Invalid JSON body"`,
 		},
 		{
 			name:       "product not found",
@@ -811,7 +811,7 @@ func TestStockIn(t *testing.T) {
 			body:       `{"quantity":10}`,
 			repoErr:    domain.ErrProductNotFound,
 			wantStatus: http.StatusNotFound,
-			wantBody:   `"error":"Product not found"`,
+			wantBody:   `"message":"Product not found"`,
 		},
 		{
 			name:       "repository error",
@@ -820,7 +820,7 @@ func TestStockIn(t *testing.T) {
 			body:       `{"quantity":10}`,
 			repoErr:    errors.New("database connection failed"),
 			wantStatus: http.StatusInternalServerError,
-			wantBody:   `"error":"Internal server error"`,
+			wantBody:   `"message":"Internal server error"`,
 		},
 		{
 			name:       "wrong HTTP method",
@@ -828,7 +828,7 @@ func TestStockIn(t *testing.T) {
 			path:       "/api/v1/products/1/stock-in",
 			body:       `{"quantity":10}`,
 			wantStatus: http.StatusMethodNotAllowed,
-			wantBody:   `"error":"method not allowed"`,
+			wantBody:   `"message":"method not allowed"`,
 			wantAllow:  http.MethodPost,
 		},
 	}

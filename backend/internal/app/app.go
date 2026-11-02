@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"gostock/config"
 	productHTTP "gostock/internal/handle/http"
+	"gostock/internal/handle/http/response"
 	"gostock/internal/platform/database"
 	"gostock/internal/repository/postgres"
 	"gostock/internal/usecase"
@@ -94,11 +95,7 @@ func NewRouter(
 			createHandler.ServeHTTP(w, r)
 		default:
 			w.Header().Set("Allow", "GET, POST")
-			http.Error(
-				w,
-				"Method not allowed",
-				http.StatusMethodNotAllowed,
-			)
+			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
 	})))
 
@@ -133,11 +130,7 @@ func NewRouter(
 			deleteHandler.ServeHTTP(w, r)
 		default:
 			w.Header().Set("Allow", "GET, PUT, DELETE")
-			http.Error(
-				w,
-				"Method not allowed",
-				http.StatusMethodNotAllowed,
-			)
+			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
 	})))
 

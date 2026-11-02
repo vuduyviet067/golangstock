@@ -1,4 +1,4 @@
-import { ApiError, ApiErrorResponse } from '../types/api';
+import { ApiError, ApiErrorResponse, ApiResponse } from '../types/api';
 
 export interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
@@ -82,6 +82,11 @@ export async function request<T>(url: string, options: RequestOptions = {}): Pro
     }
 
     throw new ApiError(message, response.status, data);
+  }
+
+  if (isJson && data !== null && typeof data === 'object' && 'success' in data && 'data' in data) {
+    const enveloped = data as ApiResponse<T>;
+    return enveloped.data;
   }
 
   return (isJson ? data : text) as T;

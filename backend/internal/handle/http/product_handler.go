@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"gostock/internal/domain"
+	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
 )
 
@@ -22,37 +23,22 @@ func NewProductHandler(uc *usecase.ProductUseCase) *ProductHandler {
 	}
 }
 
-func writeJSON(w http.ResponseWriter, status int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		return
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{
-		"error": message,
-	})
-}
-
 func (h *ProductHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/products/")
 	if rawID == "" || strings.Contains(rawID, "/") {
-		writeError(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, "invalid product ID")
 		return
 	}
 
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, "invalid product ID")
 		return
 	}
 
@@ -60,21 +46,21 @@ func (h *ProductHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, usecase.ErrInvalidID):
-			writeError(w, http.StatusBadRequest, "invalid product ID")
+			response.Error(w, http.StatusBadRequest, "invalid product ID")
 		case errors.Is(err, domain.ErrProductNotFound):
-			writeError(w, http.StatusNotFound, "Product not found")
+			response.Error(w, http.StatusNotFound, "Product not found")
 		default:
-			writeError(w, http.StatusInternalServerError, "Internal server error")
+			response.Error(w, http.StatusInternalServerError, "Internal server error")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusOK, product)
+	response.Success(w, http.StatusOK, "Product retrieved successfully", product)
 }
 func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -85,7 +71,7 @@ func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 	if rawPage := query.Get("page"); rawPage != "" {
 		parsed, err := strconv.Atoi(rawPage)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid page")
+			response.Error(w, http.StatusBadRequest, "invalid page")
 			return
 		}
 		page = parsed
@@ -94,7 +80,7 @@ func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 	if rawLimit := query.Get("limit"); rawLimit != "" {
 		parsed, err := strconv.Atoi(rawLimit)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid limit")
+			response.Error(w, http.StatusBadRequest, "invalid limit")
 			return
 		}
 		limit = parsed
@@ -110,20 +96,20 @@ func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		if errors.Is(err, usecase.ErrInvalidProduct) {
-			writeError(w, http.StatusBadRequest, "invalid list parameters")
+			response.Error(w, http.StatusBadRequest, "invalid list parameters")
 			return
 		}
 
-		writeError(w, http.StatusInternalServerError, "Internal server error")
+		response.Error(w, http.StatusInternalServerError, "Internal server error")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, products)
+	response.Success(w, http.StatusOK, "Products retrieved successfully", products)
 }
 func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -135,47 +121,47 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&product); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid JSON request")
+		response.Error(w, http.StatusBadRequest, "Invalid JSON request")
 		return
 	}
 
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
-		writeError(w, http.StatusBadRequest, "Request must contain one JSON object")
+		response.Error(w, http.StatusBadRequest, "Request must contain one JSON object")
 		return
 	}
 
 	if err := h.useCase.Create(r.Context(), &product); err != nil {
 		switch {
 		case errors.Is(err, usecase.ErrInvalidProduct):
-			writeError(w, http.StatusBadRequest, "Invalid product")
+			response.Error(w, http.StatusBadRequest, "Invalid product")
 		case errors.Is(err, domain.ErrProductSKUExists):
-			writeError(w, http.StatusConflict, "SKU already exists")
+			response.Error(w, http.StatusConflict, "SKU already exists")
 		default:
-			writeError(w, http.StatusInternalServerError, "Internal server error")
+			response.Error(w, http.StatusInternalServerError, "Internal server error")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, product)
+	response.Success(w, http.StatusCreated, "Product created successfully", product)
 }
 
 func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		w.Header().Set("Allow", http.MethodPut)
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/products/")
 	if rawID == "" || strings.Contains(rawID, "/") {
-		writeError(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, "invalid product ID")
 		return
 	}
 
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, "invalid product ID")
 		return
 	}
 
@@ -187,13 +173,13 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&product); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid JSON request")
+		response.Error(w, http.StatusBadRequest, "Invalid JSON request")
 		return
 	}
 
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
-		writeError(w, http.StatusBadRequest, "Request must contain one JSON object")
+		response.Error(w, http.StatusBadRequest, "Request must contain one JSON object")
 		return
 	}
 
@@ -202,60 +188,60 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := h.useCase.Update(r.Context(), &product); err != nil {
 		switch {
 		case errors.Is(err, usecase.ErrInvalidID):
-			writeError(w, http.StatusBadRequest, "invalid product ID")
+			response.Error(w, http.StatusBadRequest, "invalid product ID")
 		case errors.Is(err, usecase.ErrInvalidProduct):
-			writeError(w, http.StatusBadRequest, "Invalid product")
+			response.Error(w, http.StatusBadRequest, "Invalid product")
 		case errors.Is(err, domain.ErrProductNotFound):
-			writeError(w, http.StatusNotFound, "Product not found")
+			response.Error(w, http.StatusNotFound, "Product not found")
 		case errors.Is(err, domain.ErrProductSKUExists):
-			writeError(w, http.StatusConflict, "SKU already exists")
+			response.Error(w, http.StatusConflict, "SKU already exists")
 		default:
-			writeError(w, http.StatusInternalServerError, "Internal server error")
+			response.Error(w, http.StatusInternalServerError, "Internal server error")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusOK, product)
+	response.Success(w, http.StatusOK, "Product updated successfully", product)
 }
 
 func (h *ProductHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		w.Header().Set("Allow", http.MethodDelete)
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/products/")
 	if rawID == "" || strings.Contains(rawID, "/") {
-		writeError(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, "invalid product ID")
 		return
 	}
 
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, "invalid product ID")
 		return
 	}
 
 	if err := h.useCase.Delete(r.Context(), id); err != nil {
 		switch {
 		case errors.Is(err, usecase.ErrInvalidID):
-			writeError(w, http.StatusBadRequest, "invalid product ID")
+			response.Error(w, http.StatusBadRequest, "invalid product ID")
 		case errors.Is(err, domain.ErrProductNotFound):
-			writeError(w, http.StatusNotFound, "Product not found")
+			response.Error(w, http.StatusNotFound, "Product not found")
 		default:
-			writeError(w, http.StatusInternalServerError, "Internal server error")
+			response.Error(w, http.StatusInternalServerError, "Internal server error")
 		}
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	response.NoContent(w)
 }
 
 func (h *ProductHandler) StockIn(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -263,13 +249,13 @@ func (h *ProductHandler) StockIn(w http.ResponseWriter, r *http.Request) {
 	rawID = strings.TrimSuffix(rawID, "/stock-in")
 
 	if rawID == "" || strings.Contains(rawID, "/") {
-		writeError(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, "invalid product ID")
 		return
 	}
 
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, "invalid product ID")
 		return
 	}
 
@@ -283,13 +269,13 @@ func (h *ProductHandler) StockIn(w http.ResponseWriter, r *http.Request) {
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid JSON body")
+		response.Error(w, http.StatusBadRequest, "Invalid JSON body")
 		return
 	}
 
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
-		writeError(w, http.StatusBadRequest, "Request must contain one JSON object")
+		response.Error(w, http.StatusBadRequest, "Request must contain one JSON object")
 		return
 	}
 
@@ -297,24 +283,24 @@ func (h *ProductHandler) StockIn(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, usecase.ErrInvalidID):
-			writeError(w, http.StatusBadRequest, "invalid product ID")
+			response.Error(w, http.StatusBadRequest, "invalid product ID")
 		case errors.Is(err, usecase.ErrInvalidQuantity):
-			writeError(w, http.StatusBadRequest, "quantity must be greater than 0")
+			response.Error(w, http.StatusBadRequest, "quantity must be greater than 0")
 		case errors.Is(err, domain.ErrProductNotFound):
-			writeError(w, http.StatusNotFound, "Product not found")
+			response.Error(w, http.StatusNotFound, "Product not found")
 		default:
-			writeError(w, http.StatusInternalServerError, "Internal server error")
+			response.Error(w, http.StatusInternalServerError, "Internal server error")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusOK, product)
+	response.Success(w, http.StatusOK, "Stock added successfully", product)
 }
 
 func (h *ProductHandler) StockOut(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -322,13 +308,13 @@ func (h *ProductHandler) StockOut(w http.ResponseWriter, r *http.Request) {
 	rawID = strings.TrimSuffix(rawID, "/stock-out")
 
 	if rawID == "" || strings.Contains(rawID, "/") {
-		writeError(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, "invalid product ID")
 		return
 	}
 
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, "invalid product ID")
 		return
 	}
 
@@ -342,13 +328,13 @@ func (h *ProductHandler) StockOut(w http.ResponseWriter, r *http.Request) {
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid JSON body")
+		response.Error(w, http.StatusBadRequest, "Invalid JSON body")
 		return
 	}
 
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
-		writeError(w, http.StatusBadRequest, "Request must contain one JSON object")
+		response.Error(w, http.StatusBadRequest, "Request must contain one JSON object")
 		return
 	}
 
@@ -356,18 +342,18 @@ func (h *ProductHandler) StockOut(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, usecase.ErrInvalidID):
-			writeError(w, http.StatusBadRequest, "invalid product ID")
+			response.Error(w, http.StatusBadRequest, "invalid product ID")
 		case errors.Is(err, usecase.ErrInvalidQuantity):
-			writeError(w, http.StatusBadRequest, "quantity must be greater than 0")
+			response.Error(w, http.StatusBadRequest, "quantity must be greater than 0")
 		case errors.Is(err, domain.ErrProductNotFound):
-			writeError(w, http.StatusNotFound, "Product not found")
+			response.Error(w, http.StatusNotFound, "Product not found")
 		case errors.Is(err, domain.ErrInsufficientStock):
-			writeError(w, http.StatusConflict, "Insufficient stock")
+			response.Error(w, http.StatusConflict, "Insufficient stock")
 		default:
-			writeError(w, http.StatusInternalServerError, "Internal server error")
+			response.Error(w, http.StatusInternalServerError, "Internal server error")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusOK, product)
+	response.Success(w, http.StatusOK, "Stock reduced successfully", product)
 }
