@@ -11,7 +11,13 @@ import (
 type fakeProductRepository struct {
 	product *domain.Product
 	err     error
-	called  bool
+
+	called         bool
+	createCalled   bool
+	updateCalled   bool
+	listCalled     bool
+	stockInCalled  bool
+	stockOutCalled bool
 }
 
 func (f *fakeProductRepository) GetByID(
@@ -26,6 +32,7 @@ func (f *fakeProductRepository) Create(
 	ctx context.Context,
 	product *domain.Product,
 ) error {
+	f.createCalled = true
 	return nil
 }
 
@@ -33,6 +40,7 @@ func (f *fakeProductRepository) Update(
 	ctx context.Context,
 	product *domain.Product,
 ) error {
+	f.updateCalled = true
 	return nil
 }
 
@@ -49,6 +57,7 @@ func (f *fakeProductRepository) List(
 	page, limit int,
 	sortBy, order string,
 ) ([]domain.Product, int64, error) {
+	f.listCalled = true
 	return nil, 0, nil
 }
 
@@ -57,6 +66,7 @@ func (f *fakeProductRepository) StockIn(
 	id int64,
 	quantity int,
 ) (*domain.Product, error) {
+	f.stockInCalled = true
 	return nil, nil
 }
 
@@ -65,9 +75,9 @@ func (f *fakeProductRepository) StockOut(
 	id int64,
 	quantity int,
 ) (*domain.Product, error) {
+	f.stockOutCalled = true
 	return nil, nil
 }
-
 func TestGetByIDSuccess(t *testing.T) {
 	expected := &domain.Product{
 		ID:       1,
@@ -156,6 +166,9 @@ func TestCreateInvalidProduct(t *testing.T) {
 			if !errors.Is(err, ErrInvalidProduct) {
 				t.Fatalf("expected ErrInvalidProduct, got %v", err)
 			}
+			if repo.createCalled {
+				t.Fatal("repository Create should not be called for invalid product")
+			}
 		})
 	}
 }
@@ -176,6 +189,9 @@ func TestUpdateInvalidID(t *testing.T) {
 
 	if !errors.Is(err, ErrInvalidID) {
 		t.Fatalf("expected ErrInvalidID, got %v", err)
+	}
+	if repo.updateCalled {
+		t.Fatal("repository Update should not be called for invalid ID")
 	}
 }
 
@@ -235,6 +251,9 @@ func TestListInvalidParameters(t *testing.T) {
 			if !errors.Is(err, ErrInvalidProduct) {
 				t.Fatalf("expected ErrInvalidProduct, got %v", err)
 			}
+			if repo.listCalled {
+				t.Fatal("repository List should not be called for invalid parameters")
+			}
 		})
 	}
 }
@@ -280,6 +299,9 @@ func TestStockInInvalidParameters(t *testing.T) {
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("expected %v, got %v", tt.wantErr, err)
 			}
+			if repo.stockInCalled {
+				t.Fatal("repository StockIn should not be called for invalid parameters")
+			}
 		})
 	}
 }
@@ -324,6 +346,9 @@ func TestStockOutInvalidParameters(t *testing.T) {
 
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("expected %v, got %v", tt.wantErr, err)
+			}
+			if repo.stockOutCalled {
+				t.Fatal("repository StockOut should not be called for invalid parameters")
 			}
 		})
 	}
