@@ -172,7 +172,16 @@ func (uc *AuthUseCase) Authenticate(
 	encodedHash := base64.RawURLEncoding.EncodeToString(tokenHash[:])
 
 	session, err := uc.sessions.GetByTokenHash(ctx, encodedHash)
-	if err != nil || session == nil {
+
+	if errors.Is(err, domain.ErrSessionNotFound) {
+		return nil, ErrInvalidSession
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	if session == nil {
 		return nil, ErrInvalidSession
 	}
 
@@ -181,7 +190,16 @@ func (uc *AuthUseCase) Authenticate(
 	}
 
 	user, err := uc.users.GetByID(ctx, session.UserID)
-	if err != nil || user == nil {
+
+	if errors.Is(err, domain.ErrUserNotFound) {
+		return nil, ErrInvalidSession
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	if user == nil {
 		return nil, ErrInvalidSession
 	}
 

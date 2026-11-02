@@ -1,6 +1,11 @@
 package domain
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+var ErrSessionNotFound = errors.New("session not found")
 
 type Session struct {
 	ID        int64

@@ -19,3 +19,6 @@
 .idea/
 .DS_Store
 Thumbs.db
+# Local authentication data
+cookies.txt
+cookies-before-logout.txt

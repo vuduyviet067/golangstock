@@ -30,8 +30,40 @@ type fakeUserRepository struct {
 	createErr  error
 	created    *domain.User
 	createCall int
+
+	getByIDErr    error
+	getByEmailErr error
 }
 
+func (f *fakeUserRepository) GetByEmail(
+	ctx context.Context,
+	email string,
+) (*domain.User, error) {
+	if f.getByEmailErr != nil {
+		return nil, f.getByEmailErr
+	}
+
+	if f.user == nil {
+		return nil, domain.ErrUserNotFound
+	}
+
+	return f.user, nil
+}
+
+func (f *fakeUserRepository) GetByID(
+	ctx context.Context,
+	id int64,
+) (*domain.User, error) {
+	if f.getByIDErr != nil {
+		return nil, f.getByIDErr
+	}
+
+	if f.user == nil {
+		return nil, domain.ErrUserNotFound
+	}
+
+	return f.user, nil
+}
 func (f *fakeUserRepository) Create(
 	ctx context.Context,
 	user *domain.User,
@@ -62,26 +94,6 @@ func (f *fakeSessionRepository) Create(
 	return nil
 }
 
-func (f *fakeUserRepository) GetByEmail(
-	ctx context.Context,
-	email string,
-) (*domain.User, error) {
-	if f.user == nil {
-		return nil, domain.ErrUserNotFound
-	}
-	return f.user, nil
-}
-
-func (f *fakeUserRepository) GetByID(
-	ctx context.Context,
-	id int64,
-) (*domain.User, error) {
-	if f.user == nil {
-		return nil, domain.ErrUserNotFound
-	}
-	return f.user, nil
-}
-
 func (f *fakeSessionRepository) GetByTokenHash(
 	ctx context.Context,
 	tokenHash string,
@@ -93,7 +105,7 @@ func (f *fakeSessionRepository) GetByTokenHash(
 		return nil, f.getErr
 	}
 	if f.session == nil {
-		return nil, errors.New("session not found")
+		return nil, domain.ErrSessionNotFound
 	}
 
 	copy := *f.session
@@ -540,5 +552,104 @@ func TestLogoutRevokesSession(t *testing.T) {
 	// Token cũ phải bị từ chối sau logout
 	if _, err := uc.Authenticate(context.Background(), result.Token); !errors.Is(err, ErrInvalidSession) {
 		t.Fatalf("Authenticate() after logout error = %v, want %v", err, ErrInvalidSession)
+	}
+}
+func TestAuthenticateSessionNotFound(t *testing.T) {
+	users := &fakeUserRepository{}
+	sessions := &fakeSessionRepository{}
+
+	uc := NewAuthUseCase(users, sessions, 24*time.Hour)
+
+	user, err := uc.Authenticate(
+		context.Background(),
+		"unknown-token",
+	)
+
+	if !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("error = %v, want ErrInvalidSession", err)
+	}
+
+	if user != nil {
+		t.Fatal("user must be nil")
+	}
+}
+func TestAuthenticateSessionRepositoryError(t *testing.T) {
+	dbErr := errors.New("database connection failed")
+
+	sessions := &fakeSessionRepository{
+		getErr: dbErr,
+	}
+
+	uc := NewAuthUseCase(
+		&fakeUserRepository{},
+		sessions,
+		24*time.Hour,
+	)
+
+	user, err := uc.Authenticate(
+		context.Background(),
+		"valid-format-token",
+	)
+
+	if !errors.Is(err, dbErr) {
+		t.Fatalf("error = %v, want database error %v", err, dbErr)
+	}
+
+	if user != nil {
+		t.Fatal("user must be nil")
+	}
+}
+func TestAuthenticateUserNotFound(t *testing.T) {
+	sessions := &fakeSessionRepository{
+		session: &domain.Session{
+			UserID:    1,
+			ExpiresAt: time.Now().Add(time.Hour),
+		},
+	}
+
+	users := &fakeUserRepository{}
+
+	uc := NewAuthUseCase(users, sessions, 24*time.Hour)
+
+	user, err := uc.Authenticate(
+		context.Background(),
+		"valid-token",
+	)
+
+	if !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("error = %v, want ErrInvalidSession", err)
+	}
+
+	if user != nil {
+		t.Fatal("user must be nil")
+	}
+}
+func TestAuthenticateUserRepositoryError(t *testing.T) {
+	dbErr := errors.New("database connection failed")
+
+	sessions := &fakeSessionRepository{
+		session: &domain.Session{
+			UserID:    1,
+			ExpiresAt: time.Now().Add(time.Hour),
+		},
+	}
+
+	users := &fakeUserRepository{
+		getByIDErr: dbErr,
+	}
+
+	uc := NewAuthUseCase(users, sessions, 24*time.Hour)
+
+	user, err := uc.Authenticate(
+		context.Background(),
+		"valid-token",
+	)
+
+	if !errors.Is(err, dbErr) {
+		t.Fatalf("error = %v, want database error %v", err, dbErr)
+	}
+
+	if user != nil {
+		t.Fatal("user must be nil")
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"gostock/internal/domain"
+	"gostock/internal/usecase"
 )
 
 type fakeAuthenticator struct {
@@ -42,19 +43,21 @@ func TestAuthMiddlewareWithoutCookie(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+		t.Fatalf("status = %d, want %d",
+			rec.Code, http.StatusUnauthorized)
 	}
+
 	if nextCalled {
 		t.Fatal("next handler must not be called")
 	}
+
 	if auth.token != "" {
 		t.Fatal("Authenticate must not be called without a cookie")
 	}
 }
-
 func TestAuthMiddlewareInvalidSession(t *testing.T) {
 	auth := &fakeAuthenticator{
-		err: errors.New("invalid session"),
+		err: usecase.ErrInvalidSession,
 	}
 
 	nextCalled := false
@@ -205,5 +208,47 @@ func TestIsAdmin(t *testing.T) {
 	adminCtx := context.WithValue(ctx, authenticatedUserKey, &domain.User{Role: "admin"})
 	if !IsAdmin(adminCtx) {
 		t.Error("expected IsAdmin(admin) to be true")
+	}
+}
+func TestAuthMiddlewareInternalError(t *testing.T) {
+	dbErr := errors.New("database connection failed")
+
+	auth := &fakeAuthenticator{
+		err: dbErr,
+	}
+
+	nextCalled := false
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := AuthMiddleware(auth)(next)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/protected",
+		nil,
+	)
+
+	req.AddCookie(&http.Cookie{
+		Name:  "session",
+		Value: "valid-token",
+	})
+
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	t.Logf("response status = %d", rec.Code)
+	t.Logf("response body = %s", rec.Body.String())
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d",
+			rec.Code, http.StatusInternalServerError)
+	}
+	if nextCalled {
+		t.Error("next handler must not be called")
 	}
 }

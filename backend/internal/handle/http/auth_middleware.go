@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -27,7 +28,18 @@ func AuthMiddleware(auth Authenticator) func(http.Handler) http.Handler {
 			}
 
 			user, err := auth.Authenticate(r.Context(), cookie.Value)
-			if err != nil || user == nil {
+
+			if errors.Is(err, usecase.ErrInvalidSession) {
+				writeError(w, http.StatusUnauthorized, "invalid or expired session")
+				return
+			}
+
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "internal server error")
+				return
+			}
+
+			if user == nil {
 				writeError(w, http.StatusUnauthorized, "invalid or expired session")
 				return
 			}
