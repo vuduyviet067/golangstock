@@ -40,20 +40,8 @@ func (m *mockUserRepo) GetByID(ctx context.Context, id int64) (*domain.User, err
 	copy := *m.user
 	return &copy, nil
 }
-func (m *mockUserRepo) List(ctx context.Context, query string, page, limit int) ([]domain.User, int64, error) {
-	if m.user != nil {
-		return []domain.User{*m.user}, 1, nil
-	}
-	return []domain.User{}, 0, nil
-}
-func (m *mockUserRepo) Update(ctx context.Context, u *domain.User) error {
-	m.user = u
-	return nil
-}
-func (m *mockUserRepo) UpdateAndRevokeTokens(ctx context.Context, u *domain.User, revokedAt time.Time) error {
-	m.user = u
-	return nil
-}
+
+var _ domain.UserRepository = (*mockUserRepo)(nil)
 
 type mockRefreshRepo struct {
 	token         *domain.RefreshToken

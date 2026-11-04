@@ -65,6 +65,8 @@ func (m *mockUserRepo) UpdateAndRevokeTokens(ctx context.Context, user *domain.U
 	return nil
 }
 
+var _ domain.UserManagementRepository = (*mockUserRepo)(nil)
+
 func TestUserUseCase_GetByID(t *testing.T) {
 	t.Run("success clears PasswordHash", func(t *testing.T) {
 		repo := &mockUserRepo{

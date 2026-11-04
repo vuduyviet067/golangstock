@@ -52,6 +52,8 @@ func (m *mockUserRepoForHandler) UpdateAndRevokeTokens(ctx context.Context, user
 	return nil
 }
 
+var _ domain.UserManagementRepository = (*mockUserRepoForHandler)(nil)
+
 func setupUserHandler(repo *mockUserRepoForHandler) *UserHandler {
 	uc := usecase.NewUserUseCase(repo)
 	return NewUserHandler(uc)

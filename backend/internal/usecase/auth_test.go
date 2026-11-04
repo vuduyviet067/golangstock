@@ -62,17 +62,7 @@ func (f *fakeUserRepository) Create(ctx context.Context, user *domain.User) erro
 	return nil
 }
 
-func (f *fakeUserRepository) List(ctx context.Context, query string, page, limit int) ([]domain.User, int64, error) {
-	return []domain.User{}, 0, nil
-}
-
-func (f *fakeUserRepository) Update(ctx context.Context, user *domain.User) error {
-	return nil
-}
-
-func (f *fakeUserRepository) UpdateAndRevokeTokens(ctx context.Context, user *domain.User, revokedAt time.Time) error {
-	return nil
-}
+var _ domain.UserRepository = (*fakeUserRepository)(nil)
 
 type fakeRefreshTokenRepository struct {
 	mu         sync.Mutex

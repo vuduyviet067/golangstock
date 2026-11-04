@@ -86,6 +86,9 @@ func (f *fakeUserRepo) UpdateAndRevokeTokens(ctx context.Context, user *domain.U
 	return nil
 }
 
+var _ domain.UserRepository = (*fakeUserRepo)(nil)
+var _ domain.UserManagementRepository = (*fakeUserRepo)(nil)
+
 type fakeRefreshTokenRepo struct{}
 
 func (f *fakeRefreshTokenRepo) Create(ctx context.Context, token *domain.RefreshToken) error {
