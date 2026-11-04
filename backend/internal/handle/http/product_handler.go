@@ -2,7 +2,6 @@ package http
 
 import (
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -44,14 +43,7 @@ func (h *ProductHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 
 	product, err := h.useCase.GetByID(r.Context(), id)
 	if err != nil {
-		switch {
-		case errors.Is(err, usecase.ErrInvalidID):
-			response.Error(w, http.StatusBadRequest, "invalid product ID")
-		case errors.Is(err, domain.ErrProductNotFound):
-			response.Error(w, http.StatusNotFound, "Product not found")
-		default:
-			response.Error(w, http.StatusInternalServerError, "Internal server error")
-		}
+		WriteError(w, r, err)
 		return
 	}
 
@@ -95,12 +87,7 @@ func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 		query.Get("order"),
 	)
 	if err != nil {
-		if errors.Is(err, usecase.ErrInvalidProduct) {
-			response.Error(w, http.StatusBadRequest, "invalid list parameters")
-			return
-		}
-
-		response.Error(w, http.StatusInternalServerError, "Internal server error")
+		WriteError(w, r, err)
 		return
 	}
 
@@ -132,14 +119,7 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.useCase.Create(r.Context(), &product); err != nil {
-		switch {
-		case errors.Is(err, usecase.ErrInvalidProduct):
-			response.Error(w, http.StatusBadRequest, "Invalid product")
-		case errors.Is(err, domain.ErrProductSKUExists):
-			response.Error(w, http.StatusConflict, "SKU already exists")
-		default:
-			response.Error(w, http.StatusInternalServerError, "Internal server error")
-		}
+		WriteError(w, r, err)
 		return
 	}
 
@@ -186,18 +166,7 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 	product.ID = id
 
 	if err := h.useCase.Update(r.Context(), &product); err != nil {
-		switch {
-		case errors.Is(err, usecase.ErrInvalidID):
-			response.Error(w, http.StatusBadRequest, "invalid product ID")
-		case errors.Is(err, usecase.ErrInvalidProduct):
-			response.Error(w, http.StatusBadRequest, "Invalid product")
-		case errors.Is(err, domain.ErrProductNotFound):
-			response.Error(w, http.StatusNotFound, "Product not found")
-		case errors.Is(err, domain.ErrProductSKUExists):
-			response.Error(w, http.StatusConflict, "SKU already exists")
-		default:
-			response.Error(w, http.StatusInternalServerError, "Internal server error")
-		}
+		WriteError(w, r, err)
 		return
 	}
 
@@ -224,14 +193,7 @@ func (h *ProductHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.useCase.Delete(r.Context(), id); err != nil {
-		switch {
-		case errors.Is(err, usecase.ErrInvalidID):
-			response.Error(w, http.StatusBadRequest, "invalid product ID")
-		case errors.Is(err, domain.ErrProductNotFound):
-			response.Error(w, http.StatusNotFound, "Product not found")
-		default:
-			response.Error(w, http.StatusInternalServerError, "Internal server error")
-		}
+		WriteError(w, r, err)
 		return
 	}
 
@@ -281,16 +243,7 @@ func (h *ProductHandler) StockIn(w http.ResponseWriter, r *http.Request) {
 
 	product, err := h.useCase.StockIn(r.Context(), id, req.Quantity)
 	if err != nil {
-		switch {
-		case errors.Is(err, usecase.ErrInvalidID):
-			response.Error(w, http.StatusBadRequest, "invalid product ID")
-		case errors.Is(err, usecase.ErrInvalidQuantity):
-			response.Error(w, http.StatusBadRequest, "quantity must be greater than 0")
-		case errors.Is(err, domain.ErrProductNotFound):
-			response.Error(w, http.StatusNotFound, "Product not found")
-		default:
-			response.Error(w, http.StatusInternalServerError, "Internal server error")
-		}
+		WriteError(w, r, err)
 		return
 	}
 
@@ -340,18 +293,7 @@ func (h *ProductHandler) StockOut(w http.ResponseWriter, r *http.Request) {
 
 	product, err := h.useCase.StockOut(r.Context(), id, req.Quantity)
 	if err != nil {
-		switch {
-		case errors.Is(err, usecase.ErrInvalidID):
-			response.Error(w, http.StatusBadRequest, "invalid product ID")
-		case errors.Is(err, usecase.ErrInvalidQuantity):
-			response.Error(w, http.StatusBadRequest, "quantity must be greater than 0")
-		case errors.Is(err, domain.ErrProductNotFound):
-			response.Error(w, http.StatusNotFound, "Product not found")
-		case errors.Is(err, domain.ErrInsufficientStock):
-			response.Error(w, http.StatusConflict, "Insufficient stock")
-		default:
-			response.Error(w, http.StatusInternalServerError, "Internal server error")
-		}
+		WriteError(w, r, err)
 		return
 	}
 

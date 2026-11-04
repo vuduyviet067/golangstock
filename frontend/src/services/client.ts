@@ -4,12 +4,45 @@ export interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
 }
 
+// Singleton Promise to synchronize concurrent refresh requests and avoid race conditions
+let refreshPromise: Promise<boolean> | null = null;
+
+async function doRefresh(): Promise<boolean> {
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch('/api/v1/auth/refresh', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+      return res.ok;
+    } catch {
+      return false;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
 /**
  * Robust HTTP client using native fetch.
- * Explicitly sends `credentials: 'include'` to ensure HttpOnly session cookies
+ * Explicitly sends `credentials: 'include'` to ensure HttpOnly authentication cookies
  * are transmitted and preserved across all requests.
+ * Automatically attempts a silent refresh and retry when receiving HTTP 401 on protected resources.
  */
-export async function request<T>(url: string, options: RequestOptions = {}): Promise<T> {
+export async function request<T>(
+  url: string,
+  options: RequestOptions = {},
+  isRetry = false
+): Promise<T> {
   const { body, headers, ...customOptions } = options;
 
   const isPlainObjectOrArray =
@@ -21,7 +54,7 @@ export async function request<T>(url: string, options: RequestOptions = {}): Pro
 
   const config: RequestInit = {
     ...customOptions,
-    credentials: 'include', // Support HttpOnly session cookies
+    credentials: 'include', // Support HttpOnly access and refresh cookies
     headers: {
       Accept: 'application/json',
       ...(isPlainObjectOrArray ? { 'Content-Type': 'application/json' } : {}),
@@ -39,6 +72,22 @@ export async function request<T>(url: string, options: RequestOptions = {}): Pro
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Network error: Failed to connect to server';
     throw new ApiError(errorMsg, 0, err);
+  }
+
+  // Intercept 401 Unauthorized for automatic silent token refresh and retry
+  if (response.status === 401 && !isRetry) {
+    const isAuthRoute =
+      url.includes('/api/v1/auth/login') ||
+      url.includes('/api/v1/auth/register') ||
+      url.includes('/api/v1/auth/refresh');
+
+    if (!isAuthRoute) {
+      const refreshed = await doRefresh();
+      if (refreshed) {
+        // Retry the original request with new access token cookie
+        return request<T>(url, options, true);
+      }
+    }
   }
 
   // 204 No Content indicates success with no response body

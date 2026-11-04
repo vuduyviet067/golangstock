@@ -2,7 +2,6 @@ package http
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -25,7 +24,7 @@ func (f *fakeAuthenticator) Authenticate(
 	return f.user, f.err
 }
 
-func TestAuthMiddlewareWithoutCookie(t *testing.T) {
+func TestAuthMiddlewareWithoutToken(t *testing.T) {
 	auth := &fakeAuthenticator{
 		user: &domain.User{ID: 1, Email: "viet@example.com"},
 	}
@@ -43,8 +42,7 @@ func TestAuthMiddlewareWithoutCookie(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d",
-			rec.Code, http.StatusUnauthorized)
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 
 	if nextCalled {
@@ -52,10 +50,11 @@ func TestAuthMiddlewareWithoutCookie(t *testing.T) {
 	}
 
 	if auth.token != "" {
-		t.Fatal("Authenticate must not be called without a cookie")
+		t.Fatal("Authenticate must not be called without a token")
 	}
 }
-func TestAuthMiddlewareInvalidSession(t *testing.T) {
+
+func TestAuthMiddlewareInvalidToken(t *testing.T) {
 	auth := &fakeAuthenticator{
 		err: usecase.ErrInvalidSession,
 	}
@@ -68,7 +67,7 @@ func TestAuthMiddlewareInvalidSession(t *testing.T) {
 
 	handler := AuthMiddleware(auth)(next)
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
-	req.AddCookie(&http.Cookie{Name: "session", Value: "bad-token"})
+	req.AddCookie(&http.Cookie{Name: AccessTokenCookieName, Value: "bad-token"})
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -84,7 +83,7 @@ func TestAuthMiddlewareInvalidSession(t *testing.T) {
 	}
 }
 
-func TestAuthMiddlewareValidSession(t *testing.T) {
+func TestAuthMiddlewareValidCookie(t *testing.T) {
 	expectedUser := &domain.User{
 		ID:    1,
 		Email: "viet@example.com",
@@ -109,7 +108,7 @@ func TestAuthMiddlewareValidSession(t *testing.T) {
 
 	handler := AuthMiddleware(auth)(next)
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
-	req.AddCookie(&http.Cookie{Name: "session", Value: "valid-token"})
+	req.AddCookie(&http.Cookie{Name: AccessTokenCookieName, Value: "valid-jwt"})
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -119,6 +118,64 @@ func TestAuthMiddlewareValidSession(t *testing.T) {
 	}
 	if !nextCalled {
 		t.Fatal("next handler should be called")
+	}
+	if auth.token != "valid-jwt" {
+		t.Errorf("token = %q, want 'valid-jwt'", auth.token)
+	}
+}
+
+func TestAuthMiddlewareBearerTokenPrecedence(t *testing.T) {
+	expectedUser := &domain.User{
+		ID:    1,
+		Email: "viet@example.com",
+		Role:  "user",
+	}
+	auth := &fakeAuthenticator{user: expectedUser}
+
+	nextCalled := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := AuthMiddleware(auth)(next)
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	// Both Bearer header and cookie are present
+	req.Header.Set("Authorization", "Bearer header-token")
+	req.AddCookie(&http.Cookie{Name: AccessTokenCookieName, Value: "cookie-token"})
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if !nextCalled {
+		t.Fatal("next handler should be called")
+	}
+	if auth.token != "header-token" {
+		t.Errorf("auth.token = %q, want 'header-token' (Bearer must take precedence)", auth.token)
+	}
+}
+
+func TestAuthMiddlewareLegacySessionCookie(t *testing.T) {
+	expectedUser := &domain.User{ID: 1, Role: "user"}
+	auth := &fakeAuthenticator{user: expectedUser}
+
+	handler := AuthMiddleware(auth)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.AddCookie(&http.Cookie{Name: "session", Value: "legacy-token"})
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if auth.token != "legacy-token" {
+		t.Errorf("token = %q, want 'legacy-token'", auth.token)
 	}
 }
 
@@ -153,10 +210,9 @@ func TestRequireAdmin_UserRoleForbidden(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Wrap with AuthMiddleware and RequireAdmin
 	handler := AuthMiddleware(auth)(RequireAdmin(next))
 	req := httptest.NewRequest(http.MethodPost, "/admin-only", nil)
-	req.AddCookie(&http.Cookie{Name: "session", Value: "user-token"})
+	req.AddCookie(&http.Cookie{Name: AccessTokenCookieName, Value: "user-token"})
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -181,7 +237,7 @@ func TestRequireAdmin_AdminRoleAllowed(t *testing.T) {
 
 	handler := AuthMiddleware(auth)(RequireAdmin(next))
 	req := httptest.NewRequest(http.MethodPost, "/admin-only", nil)
-	req.AddCookie(&http.Cookie{Name: "session", Value: "admin-token"})
+	req.AddCookie(&http.Cookie{Name: AccessTokenCookieName, Value: "admin-token"})
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -208,47 +264,5 @@ func TestIsAdmin(t *testing.T) {
 	adminCtx := context.WithValue(ctx, authenticatedUserKey, &domain.User{Role: "admin"})
 	if !IsAdmin(adminCtx) {
 		t.Error("expected IsAdmin(admin) to be true")
-	}
-}
-func TestAuthMiddlewareInternalError(t *testing.T) {
-	dbErr := errors.New("database connection failed")
-
-	auth := &fakeAuthenticator{
-		err: dbErr,
-	}
-
-	nextCalled := false
-
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		nextCalled = true
-		w.WriteHeader(http.StatusOK)
-	})
-
-	handler := AuthMiddleware(auth)(next)
-
-	req := httptest.NewRequest(
-		http.MethodGet,
-		"/protected",
-		nil,
-	)
-
-	req.AddCookie(&http.Cookie{
-		Name:  "session",
-		Value: "valid-token",
-	})
-
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	t.Logf("response status = %d", rec.Code)
-	t.Logf("response body = %s", rec.Body.String())
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want %d",
-			rec.Code, http.StatusInternalServerError)
-	}
-	if nextCalled {
-		t.Error("next handler must not be called")
 	}
 }

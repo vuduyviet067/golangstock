@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
+
+	"gostock/config"
 	"gostock/internal/domain"
 	productHTTP "gostock/internal/handle/http"
 	"gostock/internal/usecase"
@@ -67,17 +71,47 @@ func (f *fakeUserRepo) GetByEmail(ctx context.Context, email string) (*domain.Us
 	return nil, domain.ErrUserNotFound
 }
 func (f *fakeUserRepo) GetByID(ctx context.Context, id int64) (*domain.User, error) {
+	if id == 1 {
+		return &domain.User{ID: 1, Email: "target@example.com", Role: "user"}, nil
+	}
 	return nil, domain.ErrUserNotFound
 }
-
-type fakeSessionRepo struct{}
-
-func (f *fakeSessionRepo) Create(ctx context.Context, s *domain.Session) error { return nil }
-func (f *fakeSessionRepo) GetByTokenHash(ctx context.Context, h string) (*domain.Session, error) {
-	return nil, errors.New("not found")
+func (f *fakeUserRepo) List(ctx context.Context, query string, page, limit int) ([]domain.User, int64, error) {
+	return []domain.User{}, 0, nil
 }
-func (f *fakeSessionRepo) DeleteByTokenHash(ctx context.Context, h string) error  { return nil }
-func (f *fakeSessionRepo) DeleteExpired(ctx context.Context, now time.Time) error { return nil }
+func (f *fakeUserRepo) Update(ctx context.Context, user *domain.User) error {
+	return nil
+}
+func (f *fakeUserRepo) UpdateAndRevokeTokens(ctx context.Context, user *domain.User, revokedAt time.Time) error {
+	return nil
+}
+
+type fakeRefreshTokenRepo struct{}
+
+func (f *fakeRefreshTokenRepo) Create(ctx context.Context, token *domain.RefreshToken) error {
+	return nil
+}
+func (f *fakeRefreshTokenRepo) GetByTokenHash(ctx context.Context, tokenHash string) (*domain.RefreshToken, error) {
+	return nil, domain.ErrRefreshTokenNotFound
+}
+func (f *fakeRefreshTokenRepo) Rotate(ctx context.Context, oldTokenHash string, newToken *domain.RefreshToken) error {
+	return nil
+}
+func (f *fakeRefreshTokenRepo) Revoke(ctx context.Context, tokenHash string, revokedAt time.Time) error {
+	return nil
+}
+func (f *fakeRefreshTokenRepo) RevokeAllForUser(ctx context.Context, userID int64, revokedAt time.Time) error {
+	return nil
+}
+
+type fakeTokenManager struct{}
+
+func (f *fakeTokenManager) GenerateAccessToken(userID int64, email, role string) (string, time.Time, error) {
+	return "test-token", time.Now().Add(time.Hour), nil
+}
+func (f *fakeTokenManager) ValidateAccessToken(tokenStr string) (*usecase.TokenClaims, error) {
+	return &usecase.TokenClaims{UserID: 1, Email: "test@example.com", Role: "user"}, nil
+}
 
 func setupTestRouter() *http.ServeMux {
 	productRepo := &fakeProductRepo{}
@@ -85,13 +119,17 @@ func setupTestRouter() *http.ServeMux {
 	productHandler := productHTTP.NewProductHandler(productUC)
 
 	userRepo := &fakeUserRepo{}
-	sessionRepo := &fakeSessionRepo{}
-	authUC := usecase.NewAuthUseCase(userRepo, sessionRepo, time.Hour)
-	authHandler := productHTTP.NewAuthHandler(authUC)
+	refreshRepo := &fakeRefreshTokenRepo{}
+	tokenManager := &fakeTokenManager{}
+	authUC := usecase.NewAuthUseCase(userRepo, refreshRepo, tokenManager, 15*time.Minute, 7*24*time.Hour, 15*time.Second)
+	authHandler := productHTTP.NewAuthHandler(authUC, nil)
+
+	userUC := usecase.NewUserUseCase(userRepo)
+	userHandler := productHTTP.NewUserHandler(userUC)
 
 	authenticator := &fakeAuth{}
 
-	return NewRouter(nil, productHandler, authHandler, authenticator)
+	return NewRouter(nil, productHandler, authHandler, authenticator, userHandler)
 }
 
 func TestProductRoutes_AuthorizationMatrix(t *testing.T) {
@@ -304,4 +342,478 @@ func TestProductRoutes_AuthorizationMatrix(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUserRoutes_AuthorizationMatrix(t *testing.T) {
+	router := setupTestRouter()
+
+	validPatchBody := `{"role":"admin"}`
+
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		body       string
+		token      string
+		wantStatus int
+	}{
+		// 1. Unauthenticated (no token) -> 401
+		{
+			name:       "No token - GET /users (401)",
+			method:     http.MethodGet,
+			path:       "/api/v1/users",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "No token - GET /users/1 (401)",
+			method:     http.MethodGet,
+			path:       "/api/v1/users/1",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "No token - PATCH /users/1 (401)",
+			method:     http.MethodPatch,
+			path:       "/api/v1/users/1",
+			body:       validPatchBody,
+			wantStatus: http.StatusUnauthorized,
+		},
+
+		// 2. Invalid token -> 401
+		{
+			name:       "Invalid token - GET /users (401)",
+			method:     http.MethodGet,
+			path:       "/api/v1/users",
+			token:      "invalid-token",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "Invalid token - GET /users/1 (401)",
+			method:     http.MethodGet,
+			path:       "/api/v1/users/1",
+			token:      "invalid-token",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "Invalid token - PATCH /users/1 (401)",
+			method:     http.MethodPatch,
+			path:       "/api/v1/users/1",
+			body:       validPatchBody,
+			token:      "invalid-token",
+			wantStatus: http.StatusUnauthorized,
+		},
+
+		// 3. User (role: "user") -> 403 Forbidden
+		{
+			name:       "User role - GET /users (403)",
+			method:     http.MethodGet,
+			path:       "/api/v1/users",
+			token:      "user-token",
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "User role - GET /users/1 (403)",
+			method:     http.MethodGet,
+			path:       "/api/v1/users/1",
+			token:      "user-token",
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "User role - PATCH /users/1 (403)",
+			method:     http.MethodPatch,
+			path:       "/api/v1/users/1",
+			body:       validPatchBody,
+			token:      "user-token",
+			wantStatus: http.StatusForbidden,
+		},
+
+		// 4. Admin (role: "admin") -> Allowed (200 OK)
+		{
+			name:       "Admin role - GET /users (200)",
+			method:     http.MethodGet,
+			path:       "/api/v1/users",
+			token:      "admin-token",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "Admin role - GET /users/1 (200)",
+			method:     http.MethodGet,
+			path:       "/api/v1/users/1",
+			token:      "admin-token",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "Admin role - PATCH /users/1 (200)",
+			method:     http.MethodPatch,
+			path:       "/api/v1/users/1",
+			body:       validPatchBody,
+			token:      "admin-token",
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var bodyReader *strings.Reader
+			if tt.body != "" {
+				bodyReader = strings.NewReader(tt.body)
+			} else {
+				bodyReader = strings.NewReader("")
+			}
+
+			req := httptest.NewRequest(tt.method, tt.path, bodyReader)
+			req.Header.Set("Content-Type", "application/json")
+			if tt.token != "" {
+				req.Header.Set("Authorization", "Bearer "+tt.token)
+			}
+
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Errorf("%s %s got status %d (%s), want %d",
+					tt.method, tt.path, rec.Code, rec.Body.String(), tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestRouter_RouteRegistration(t *testing.T) {
+	t.Run("health check route registered", func(t *testing.T) {
+		router := setupTestRouter()
+		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for /health, got %d", rec.Code)
+		}
+		if !strings.Contains(rec.Body.String(), "health check passed") {
+			t.Errorf("expected response to contain 'health check passed', got %s", rec.Body.String())
+		}
+	})
+
+	t.Run("readiness check registered with database", func(t *testing.T) {
+		db, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
+		if err != nil {
+			t.Fatalf("failed to create sqlmock: %v", err)
+		}
+		defer db.Close()
+		mock.ExpectPing()
+
+		productRepo := &fakeProductRepo{}
+		productUC := usecase.NewProductUseCase(productRepo)
+		productHandler := productHTTP.NewProductHandler(productUC)
+
+		userRepo := &fakeUserRepo{}
+		refreshRepo := &fakeRefreshTokenRepo{}
+		tokenManager := &fakeTokenManager{}
+		authUC := usecase.NewAuthUseCase(userRepo, refreshRepo, tokenManager, 15*time.Minute, 7*24*time.Hour, 15*time.Second)
+		authHandler := productHTTP.NewAuthHandler(authUC, nil)
+
+		authenticator := &fakeAuth{}
+		userUC := usecase.NewUserUseCase(userRepo)
+		userHandler := productHTTP.NewUserHandler(userUC)
+		router := NewRouter(db, productHandler, authHandler, authenticator, userHandler)
+
+		req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for /ready, got %d", rec.Code)
+		}
+		if !strings.Contains(rec.Body.String(), "ready") {
+			t.Errorf("expected response to contain ready, got %s", rec.Body.String())
+		}
+	})
+
+	t.Run("readiness check omitted when database is nil", func(t *testing.T) {
+		router := setupTestRouter()
+		req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 Not Found for /ready when db is nil, got %d", rec.Code)
+		}
+	})
+
+	t.Run("auth routes registered", func(t *testing.T) {
+		router := setupTestRouter()
+
+		routes := []struct {
+			path       string
+			method     string
+			wantNot404 bool
+		}{
+			{"/api/v1/auth/register", http.MethodPost, true},
+			{"/api/v1/auth/login", http.MethodPost, true},
+			{"/api/v1/auth/refresh", http.MethodPost, true},
+			{"/api/v1/auth/logout", http.MethodPost, true},
+			{"/api/v1/auth/me", http.MethodGet, true},
+		}
+
+		for _, r := range routes {
+			req := httptest.NewRequest(r.method, r.path, nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code == http.StatusNotFound {
+				t.Errorf("route %s %s was not registered (got 404)", r.method, r.path)
+			}
+		}
+	})
+}
+
+func TestApp_Lifecycle(t *testing.T) {
+	validCfg := config.Config{
+		DatabaseURL:             "postgres://user:pass@localhost:5432/gostock?sslmode=disable",
+		HTTPPort:                "8080",
+		JWTSecret:               "this-is-a-valid-secret-with-at-least-32-bytes-long!",
+		JWTIssuer:               "gostock",
+		JWTAudience:             "gostock-api",
+		AccessTokenTTL:          15 * time.Minute,
+		RefreshTokenTTL:         7 * 24 * time.Hour,
+		RefreshTokenGracePeriod: 15 * time.Second,
+	}
+
+	t.Run("construction failure on invalid JWT secret returns useful error", func(t *testing.T) {
+		cfg := validCfg
+		cfg.JWTSecret = "too-short"
+
+		app, err := New(cfg)
+		if err == nil {
+			t.Fatal("expected error for short JWT secret, got nil")
+		}
+		if app != nil {
+			t.Fatal("expected nil App on construction error")
+		}
+		if !strings.Contains(err.Error(), "initialize jwt service") {
+			t.Errorf("expected error to mention jwt service, got: %v", err)
+		}
+	})
+
+	t.Run("construction failure on invalid database URL returns useful error", func(t *testing.T) {
+		cfg := validCfg
+		cfg.DatabaseURL = ""
+
+		app, err := New(cfg)
+		if err == nil {
+			t.Fatal("expected error for empty DatabaseURL, got nil")
+		}
+		if app != nil {
+			t.Fatal("expected nil App on construction error")
+		}
+		if !strings.Contains(err.Error(), "connect to database") {
+			t.Errorf("expected error to mention connect to database, got: %v", err)
+		}
+	})
+
+	t.Run("partially initialized DB is closed when post-DB step fails", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("failed to create sqlmock: %v", err)
+		}
+		mock.ExpectClose()
+
+		mockOpener := func(dsn string) (*sql.DB, error) {
+			return db, nil
+		}
+		simulatedFailure := func(db *sql.DB) error {
+			return errors.New("simulated post-db failure")
+		}
+
+		app, err := newApp(validCfg, mockOpener, simulatedFailure)
+		if err == nil {
+			t.Fatal("expected error from post-db failure, got nil")
+		}
+		if app != nil {
+			t.Fatal("expected nil App on error")
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("expected db.Close() to be called on failure: %v", err)
+		}
+	})
+
+	t.Run("Close handles nil DB safely", func(t *testing.T) {
+		app := &App{db: nil}
+		if err := app.Close(); err != nil {
+			t.Errorf("expected Close() on nil db to succeed, got %v", err)
+		}
+
+		var nilApp *App
+		if err := nilApp.Close(); err != nil {
+			t.Errorf("expected Close() on nil App to succeed, got %v", err)
+		}
+	})
+
+	t.Run("Close is idempotent and does not close DB twice", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("failed to create sqlmock: %v", err)
+		}
+		mock.ExpectClose() // only 1 Close call expected
+
+		app := &App{db: db}
+		if err := app.Close(); err != nil {
+			t.Fatalf("first Close() failed: %v", err)
+		}
+		if err := app.Close(); err != nil {
+			t.Fatalf("second Close() failed: %v", err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("Close was unexpectedly called more than once: %v", err)
+		}
+	})
+
+	t.Run("Run with already-canceled context returns error without starting server", func(t *testing.T) {
+		server := &http.Server{
+			Addr:    "127.0.0.1:0",
+			Handler: http.NotFoundHandler(),
+		}
+		app := &App{server: server}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // canceled before calling Run
+
+		err := app.Run(ctx)
+		if err == nil {
+			t.Fatal("expected error on canceled context, got nil")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected error wrapping context.Canceled, got: %v", err)
+		}
+	})
+
+	t.Run("Run returns error if called a second time", func(t *testing.T) {
+		server := &http.Server{
+			Addr:    "127.0.0.1:0",
+			Handler: http.NotFoundHandler(),
+		}
+		app := &App{server: server}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // cancel immediately
+		_ = app.Run(ctx)
+
+		// Second run attempt
+		err := app.Run(context.Background())
+		if err == nil {
+			t.Fatal("expected error on second Run(), got nil")
+		}
+		if !strings.Contains(err.Error(), "already started") {
+			t.Errorf("expected error mentioning 'already started', got: %v", err)
+		}
+	})
+
+	t.Run("Run starts server and handles graceful shutdown deterministically", func(t *testing.T) {
+		ready := make(chan struct{})
+		server := &http.Server{
+			Addr:    "127.0.0.1:0",
+			Handler: http.NotFoundHandler(),
+		}
+		app := &App{
+			server:  server,
+			readyCh: ready,
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- app.Run(ctx)
+		}()
+
+		select {
+		case <-ready:
+			// Network listener has been bound; cancel context to trigger shutdown
+			cancel()
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for readyCh")
+		}
+
+		select {
+		case err := <-errCh:
+			if err != nil {
+				t.Fatalf("expected nil on normal shutdown, got: %v", err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for Run to exit")
+		}
+	})
+
+	t.Run("shutdown failure triggers force close and returns error", func(t *testing.T) {
+		ready := make(chan struct{})
+		server := &http.Server{
+			Addr:    "127.0.0.1:0",
+			Handler: http.NotFoundHandler(),
+		}
+		simulatedErr := errors.New("simulated shutdown timeout")
+		app := &App{
+			server:  server,
+			readyCh: ready,
+			shutdownFunc: func(ctx context.Context) error {
+				return simulatedErr
+			},
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- app.Run(ctx)
+		}()
+
+		select {
+		case <-ready:
+			cancel()
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for readyCh")
+		}
+
+		select {
+		case err := <-errCh:
+			if err == nil {
+				t.Fatal("expected error on shutdown timeout/failure, got nil")
+			}
+			if !strings.Contains(err.Error(), "shutdown HTTP server") || !strings.Contains(err.Error(), "simulated shutdown timeout") {
+				t.Errorf("expected error to mention shutdown HTTP server and simulated timeout, got: %v", err)
+			}
+			if !errors.Is(err, simulatedErr) {
+				t.Errorf("expected errors.Is(err, simulatedErr) to be true, got false; err: %v", err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for force-close shutdown to return")
+		}
+	})
+
+	t.Run("Run returns error when network listener fails to bind", func(t *testing.T) {
+		server := &http.Server{
+			Addr:    "invalid-host-name-cannot-bind:99999",
+			Handler: http.NotFoundHandler(),
+		}
+		app := &App{server: server}
+
+		err := app.Run(context.Background())
+		if err == nil {
+			t.Fatal("expected error when server fails to bind, got nil")
+		}
+		if !strings.Contains(err.Error(), "listen on") {
+			t.Errorf("expected error to mention 'listen on', got: %v", err)
+		}
+	})
+
+	t.Run("Run returns error on nil or uninitialized application", func(t *testing.T) {
+		var nilApp *App
+		if err := nilApp.Run(context.Background()); err == nil {
+			t.Fatal("expected error on nil App, got nil")
+		}
+
+		app := &App{server: nil}
+		if err := app.Run(context.Background()); err == nil {
+			t.Fatal("expected error on nil server, got nil")
+		}
+	})
 }

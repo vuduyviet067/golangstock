@@ -3,8 +3,10 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"gostock/internal/domain"
+	"errors"
 	"time"
+
+	"gostock/internal/domain"
 )
 
 type SessionRepository struct {
@@ -53,9 +55,10 @@ func (r *SessionRepository) GetByTokenHash(
 		&session.CreatedAt,
 	)
 
-	if err == sql.ErrNoRows {
-		return nil, sql.ErrNoRows
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, domain.ErrSessionNotFound
 	}
+
 	if err != nil {
 		return nil, err
 	}

@@ -5,157 +5,160 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"sync"
+	"time"
+
 	"gostock/config"
 	productHTTP "gostock/internal/handle/http"
-	"gostock/internal/handle/http/response"
 	"gostock/internal/platform/database"
+	"gostock/internal/platform/jwt"
 	"gostock/internal/repository/postgres"
 	"gostock/internal/usecase"
-	"net/http"
-	"os"
-	"os/signal"
-	"strings"
-	"syscall"
-	"time"
 )
 
-func NewServer(cfg config.Config) (*http.Server, *sql.DB, error) {
-	db, err := database.OpenPostgres(cfg.DatabaseURL)
+const defaultShutdownTimeout = 10 * time.Second
+
+// App encapsulates the application's runtime dependencies and manages its lifecycle.
+type App struct {
+	server          *http.Server
+	db              *sql.DB
+	shutdownTimeout time.Duration
+	readyCh         chan struct{}                   // optional channel closed when network listener is bound
+	shutdownFunc    func(ctx context.Context) error // optional test seam to simulate shutdown failure
+	started         bool
+	closed          bool
+	mu              sync.Mutex
+}
+
+type dbOpener func(dsn string) (*sql.DB, error)
+
+// New initializes the composition root, wiring together repositories, use cases,
+// handlers, router, and configuring the HTTP server with timeouts.
+// If initialization fails after opening the database, the database is closed before returning.
+func New(cfg config.Config) (*App, error) {
+	return newApp(cfg, database.OpenPostgres, nil)
+}
+
+// newApp is an internal helper allowing dependency injection for database opener and post-db hooks.
+func newApp(cfg config.Config, opener dbOpener, postDBHook func(db *sql.DB) error) (*App, error) {
+	// 1. Initialize JWT service first (fails fast before touching the database)
+	jwtService, err := jwt.NewJWTService(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience, cfg.AccessTokenTTL)
 	if err != nil {
-		return nil, nil, err
+		return nil, fmt.Errorf("initialize jwt service: %w", err)
 	}
 
+	// 2. Open PostgreSQL connection pool
+	db, err := opener(cfg.DatabaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("connect to database: %w", err)
+	}
+
+	// Resource safety: If any subsequent initialization step fails, guarantee db cleanup
+	var success bool
+	defer func() {
+		if !success && db != nil {
+			_ = db.Close()
+		}
+	}()
+
+	if postDBHook != nil {
+		if err := postDBHook(db); err != nil {
+			return nil, fmt.Errorf("post-database hook: %w", err)
+		}
+	}
+
+	// 3. Construct repositories
 	productRepo := postgres.NewProductRepository(db)
-	productUseCase := usecase.NewProductUseCase(productRepo)
-	productHandler := productHTTP.NewProductHandler(productUseCase)
-
 	userRepo := postgres.NewUserRepository(db)
-	sessionRepo := postgres.NewSessionRepository(db)
+	refreshRepo := postgres.NewRefreshTokenRepository(db)
 
+	// 4. Construct use cases
+	productUseCase := usecase.NewProductUseCase(productRepo)
 	authUseCase := usecase.NewAuthUseCase(
 		userRepo,
-		sessionRepo,
-		cfg.SessionTTL,
+		refreshRepo,
+		jwtService,
+		cfg.AccessTokenTTL,
+		cfg.RefreshTokenTTL,
+		cfg.RefreshTokenGracePeriod,
 	)
-	authHandler := productHTTP.NewAuthHandler(authUseCase)
+	userUseCase := usecase.NewUserUseCase(userRepo)
 
-	mux := NewRouter(db, productHandler, authHandler, authUseCase)
+	// 5. Construct HTTP handlers
+	cookieManager := productHTTP.NewCookieManager(cfg.CookieSecure, cfg.CookieSameSite, cfg.AccessTokenTTL, cfg.RefreshTokenTTL)
+	authHandler := productHTTP.NewAuthHandler(authUseCase, cookieManager)
+	productHandler := productHTTP.NewProductHandler(productUseCase)
+	userHandler := productHTTP.NewUserHandler(userUseCase)
 
+	// 6. Construct router and middleware
+	router := NewRouter(db, productHandler, authHandler, authUseCase, userHandler)
+	handler := productHTTP.CORSMiddleware(cfg.AllowedOrigins)(router)
+
+	// 7. Configure HTTP server with production-grade timeouts
 	server := &http.Server{
-		Addr:    ":" + cfg.HTTPPort,
-		Handler: mux,
+		Addr:              ":" + cfg.HTTPPort,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
-	return server, db, nil
+	success = true
+	return &App{
+		server:          server,
+		db:              db,
+		shutdownTimeout: defaultShutdownTimeout,
+	}, nil
 }
 
-func NewRouter(
-	db *sql.DB,
-	productHandler *productHTTP.ProductHandler,
-	authHandler *productHTTP.AuthHandler,
-	authUseCase productHTTP.Authenticator,
-) *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", productHTTP.HealthHandler)
-
-	// Đăng ký Auth routes (public)
-	mux.HandleFunc("/api/v1/auth/register", authHandler.Register)
-	mux.HandleFunc("/api/v1/auth/login", authHandler.Login)
-	mux.HandleFunc("/api/v1/auth/logout", authHandler.Logout)
-
-	// Auth route yêu cầu xác thực
-	authMiddleware := productHTTP.AuthMiddleware(authUseCase)
-	mux.Handle(
-		"/api/v1/auth/me",
-		authMiddleware(
-			http.HandlerFunc(authHandler.Me),
-		),
-	)
-
-	if db != nil {
-		readinessHandler := productHTTP.NewReadinessHandler(db)
-		mux.Handle("/ready", readinessHandler)
+// Run starts the HTTP server and coordinates graceful shutdown on context cancellation.
+// It guarantees that:
+// - A canceled context before startup does not start the server or leak goroutines.
+// - The server is started exactly once.
+// - Shutdown is properly coordinated with the serving goroutine.
+// - http.ErrServerClosed is treated as normal shutdown.
+// - Unexpected serving errors are returned to the caller.
+func (a *App) Run(ctx context.Context) error {
+	if a == nil || a.server == nil {
+		return errors.New("cannot run uninitialized application")
 	}
 
-	createHandler := productHTTP.RequireAdmin(http.HandlerFunc(productHandler.Create))
-	updateHandler := productHTTP.RequireAdmin(http.HandlerFunc(productHandler.Update))
-	deleteHandler := productHTTP.RequireAdmin(http.HandlerFunc(productHandler.Delete))
+	a.mu.Lock()
+	if a.started {
+		a.mu.Unlock()
+		return errors.New("application already started")
+	}
+	a.started = true
+	a.mu.Unlock()
 
-	// Protected Product routes (/api/v1/products):
-	// - GET: Authenticated (User & Admin) -> List
-	// - POST: Admin Only -> Create
-	mux.Handle("/api/v1/products", authMiddleware(http.HandlerFunc(func(
-		w http.ResponseWriter,
-		r *http.Request,
-	) {
-		switch r.Method {
-		case http.MethodGet:
-			productHandler.List(w, r)
-		case http.MethodPost:
-			createHandler.ServeHTTP(w, r)
-		default:
-			w.Header().Set("Allow", "GET, POST")
-			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
-		}
-	})))
+	// 1. If context is already canceled, do not start the server
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("context canceled before server start: %w", err)
+	}
 
-	// Protected Product routes (/api/v1/products/):
-	// - POST /stock-in: Authenticated (User & Admin) -> StockIn
-	// - POST /stock-out: Authenticated (User & Admin) -> StockOut
-	// - GET /{id}: Authenticated (User & Admin) -> GetByID
-	// - PUT /{id}: Admin Only -> Update
-	// - DELETE /{id}: Admin Only -> Delete
-	mux.Handle("/api/v1/products/", authMiddleware(http.HandlerFunc(func(
-		w http.ResponseWriter,
-		r *http.Request,
-	) {
-		path := r.URL.Path
-
-		if strings.HasSuffix(path, "/stock-in") {
-			productHandler.StockIn(w, r)
-			return
-		}
-
-		if strings.HasSuffix(path, "/stock-out") {
-			productHandler.StockOut(w, r)
-			return
-		}
-
-		switch r.Method {
-		case http.MethodGet:
-			productHandler.GetByID(w, r)
-		case http.MethodPut:
-			updateHandler.ServeHTTP(w, r)
-		case http.MethodDelete:
-			deleteHandler.ServeHTTP(w, r)
-		default:
-			w.Header().Set("Allow", "GET, PUT, DELETE")
-			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
-		}
-	})))
-
-	return mux
-}
-
-func Run(cfg config.Config) error {
-	server, db, err := NewServer(cfg)
+	// 2. Bind the network listener synchronously so startup errors are immediate
+	listener, err := net.Listen("tcp", a.server.Addr)
 	if err != nil {
-		return fmt.Errorf("initialize application: %w", err)
+		return fmt.Errorf("listen on %s: %w", a.server.Addr, err)
 	}
-	defer db.Close()
+	a.server.Addr = listener.Addr().String()
 
-	ctx, stop := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-	)
-	defer stop()
+	// 3. Double-check context cancellation after binding before launching goroutine
+	if err := ctx.Err(); err != nil {
+		_ = listener.Close()
+		return fmt.Errorf("context canceled before serving: %w", err)
+	}
+
+	if a.readyCh != nil {
+		close(a.readyCh)
+	}
 
 	errCh := make(chan error, 1)
-
 	go func() {
-		fmt.Printf("GoStock is running at http://localhost%s\n", server.Addr)
-		errCh <- server.ListenAndServe()
+		errCh <- a.server.Serve(listener)
 	}()
 
 	select {
@@ -163,29 +166,73 @@ func Run(cfg config.Config) error {
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
-		return fmt.Errorf("run HTTP server: %w", err)
+		return fmt.Errorf("serve HTTP server: %w", err)
 
 	case <-ctx.Done():
-		fmt.Println("Shutdown signal received")
+		timeout := a.shutdownTimeout
+		if timeout <= 0 {
+			timeout = defaultShutdownTimeout
+		}
 
 		shutdownCtx, cancel := context.WithTimeout(
 			context.Background(),
-			10*time.Second,
+			timeout,
 		)
 		defer cancel()
 
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			_ = server.Close()
-			return fmt.Errorf("shutdown HTTP server: %w", err)
+		var shutdownErr error
+		if a.shutdownFunc != nil {
+			if err := a.shutdownFunc(shutdownCtx); err != nil {
+				shutdownErr = fmt.Errorf("shutdown HTTP server: %w", err)
+			}
+		} else {
+			if err := a.server.Shutdown(shutdownCtx); err != nil {
+				shutdownErr = fmt.Errorf("shutdown HTTP server: %w", err)
+			}
 		}
 
-		// Wait for ListenAndServe to return.
-		err := <-errCh
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("stop HTTP server: %w", err)
+		if shutdownErr != nil {
+			_ = a.server.Close()
 		}
 
-		fmt.Println("GoStock stopped gracefully")
+		// Wait for the serving goroutine to exit
+		serveErr := <-errCh
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			serveErr = fmt.Errorf("serve HTTP server: %w", serveErr)
+			if shutdownErr != nil {
+				return errors.Join(shutdownErr, serveErr)
+			}
+			return serveErr
+		}
+
+		if shutdownErr != nil {
+			return shutdownErr
+		}
+
 		return nil
 	}
+}
+
+// Close closes the underlying database connection pool safely.
+// It is nil-safe, idempotent, and guarantees database resources are not closed multiple times.
+func (a *App) Close() error {
+	if a == nil {
+		return nil
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.closed {
+		return nil
+	}
+	a.closed = true
+
+	if a.db != nil {
+		if err := a.db.Close(); err != nil {
+			return fmt.Errorf("close database: %w", err)
+		}
+	}
+
+	return nil
 }

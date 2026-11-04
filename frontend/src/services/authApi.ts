@@ -12,7 +12,7 @@ const AUTH_BASE_URL = '/api/v1/auth';
 export const authApi = {
   /**
    * Log in with email and password.
-   * On success (200 OK), the backend sets the HttpOnly `session` cookie.
+   * On success (200 OK), backend sets HttpOnly `access_token` and `refresh_token` cookies.
    */
   async login(data: LoginRequest): Promise<LoginResponse> {
     return request<LoginResponse>(`${AUTH_BASE_URL}/login`, {
@@ -32,8 +32,8 @@ export const authApi = {
   },
 
   /**
-   * Get the current authenticated user by validating the session cookie.
-   * Returns 401 Unauthorized if not logged in or session expired.
+   * Get the current authenticated user by validating the access token cookie.
+   * Returns 401 Unauthorized if not logged in or access token expired.
    */
   async getMe(): Promise<AuthUserResponse> {
     return request<AuthUserResponse>(`${AUTH_BASE_URL}/me`, {
@@ -42,7 +42,16 @@ export const authApi = {
   },
 
   /**
-   * Log out the current user: deletes the session record in DB and clears the cookie.
+   * Refresh session: rotates the refresh token and sets new access and refresh cookies.
+   */
+  async refresh(): Promise<AuthUserResponse> {
+    return request<AuthUserResponse>(`${AUTH_BASE_URL}/refresh`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Log out the current user: revokes the refresh token and clears both cookies.
    */
   async logout(): Promise<LogoutResponse> {
     return request<LogoutResponse>(`${AUTH_BASE_URL}/logout`, {

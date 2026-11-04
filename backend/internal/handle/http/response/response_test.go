@@ -154,7 +154,7 @@ func TestMarshalErrorFallback(t *testing.T) {
 	}
 
 	bodyStr := strings.TrimSpace(rec.Body.String())
-	expected := `{"success":false,"message":"internal server error","data":null}`
+	expected := `{"success":false,"message":"` + InternalServerErrorMessage + `","data":null}`
 	if bodyStr != expected {
 		t.Errorf("expected body %s, got %s", expected, bodyStr)
 	}
@@ -178,5 +178,91 @@ func TestHeaderPreservation(t *testing.T) {
 	}
 	if rec.Header().Get("Content-Type") != "application/json" {
 		t.Errorf("expected Content-Type application/json")
+	}
+}
+
+func TestCreated(t *testing.T) {
+	rec := httptest.NewRecorder()
+	item := map[string]any{"id": 123, "name": "Item"}
+	Created(rec, "Resource created successfully", item)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, rec.Code)
+	}
+
+	var res Response
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !res.Success {
+		t.Error("expected success=true")
+	}
+	if res.Message != "Resource created successfully" {
+		t.Errorf("expected message 'Resource created successfully', got %q", res.Message)
+	}
+}
+
+func TestValidationError(t *testing.T) {
+	rec := httptest.NewRecorder()
+	fields := map[string]string{
+		"email":    "invalid email",
+		"password": "password too short",
+	}
+
+	ValidationError(rec, "Validation failed", fields)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+
+	var res Response
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if res.Success {
+		t.Error("expected success=false")
+	}
+	if res.Message != "Validation failed" {
+		t.Errorf("expected message 'Validation failed', got %q", res.Message)
+	}
+
+	dataMap, ok := res.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("expected data to be map, got %T", res.Data)
+	}
+	fieldsMap, ok := dataMap["fields"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected fields to be map, got %T", dataMap["fields"])
+	}
+	if fieldsMap["email"] != "invalid email" || fieldsMap["password"] != "password too short" {
+		t.Errorf("unexpected fields content: %+v", fieldsMap)
+	}
+}
+
+func TestPaginated(t *testing.T) {
+	rec := httptest.NewRecorder()
+	items := []string{"item1", "item2"}
+
+	Paginated(rec, "Items retrieved", items, 1, 10, 25)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var res Response
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !res.Success {
+		t.Error("expected success=true")
+	}
+
+	dataBytes, _ := json.Marshal(res.Data)
+	var paginated PaginatedData
+	if err := json.Unmarshal(dataBytes, &paginated); err != nil {
+		t.Fatalf("failed to decode paginated data: %v", err)
+	}
+	if paginated.Pagination.Page != 1 || paginated.Pagination.Limit != 10 || paginated.Pagination.Total != 25 || paginated.Pagination.TotalPages != 3 {
+		t.Errorf("unexpected pagination meta: %+v", paginated.Pagination)
 	}
 }

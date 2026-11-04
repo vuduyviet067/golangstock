@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -15,10 +16,15 @@ import (
 )
 
 var (
-	ErrInvalidCredentials = errors.New("invalid email or password")
-	ErrInvalidEmail       = errors.New("invalid email")
-	ErrInvalidPassword    = errors.New("invalid password")
-	ErrInvalidSession     = errors.New("invalid session")
+	ErrInvalidCredentials  = errors.New("invalid email or password")
+	ErrInvalidEmail        = errors.New("invalid email")
+	ErrInvalidPassword     = errors.New("invalid password")
+	ErrInvalidSession      = errors.New("invalid session")
+	ErrRefreshTokenRevoked = domain.ErrRefreshTokenRevoked
+	ErrRefreshTokenExpired = domain.ErrRefreshTokenExpired
+	ErrRefreshTokenReused  = domain.ErrRefreshTokenReused
+	ErrConcurrentRefresh   = domain.ErrConcurrentRefresh
+	ErrInvalidTokenTTL     = errors.New("token TTLs must be positive")
 )
 
 const (
@@ -27,26 +33,58 @@ const (
 	passwordMaxLen  = 72
 )
 
-type AuthUseCase struct {
-	users      domain.UserRepository
-	sessions   domain.SessionRepository
-	sessionTTL time.Duration
+// TokenClaims represents the payload decoded from a valid JWT Access Token.
+type TokenClaims struct {
+	UserID int64
+	Email  string
+	Role   string
 }
+
+// TokenManager abstracts JWT token generation and validation.
+type TokenManager interface {
+	GenerateAccessToken(userID int64, email, role string) (string, time.Time, error)
+	ValidateAccessToken(tokenStr string) (*TokenClaims, error)
+}
+
+type AuthUseCase struct {
+	users               domain.UserRepository
+	refreshTokens       domain.RefreshTokenRepository
+	tokenManager        TokenManager
+	accessTokenTTL      time.Duration
+	refreshTokenTTL     time.Duration
+	rotationGracePeriod time.Duration
+}
+
 type LoginResult struct {
-	User      *domain.User
+	User                  *domain.User
+	AccessToken           string
+	RefreshToken          string
+	AccessTokenExpiresAt  time.Time
+	RefreshTokenExpiresAt time.Time
+
+	// Compatibility aliases for existing handler during migration
 	Token     string
 	ExpiresAt time.Time
 }
 
 func NewAuthUseCase(
 	users domain.UserRepository,
-	sessions domain.SessionRepository,
-	sessionTTL time.Duration,
+	refreshTokens domain.RefreshTokenRepository,
+	tokenManager TokenManager,
+	accessTokenTTL time.Duration,
+	refreshTokenTTL time.Duration,
+	rotationGracePeriod time.Duration,
 ) *AuthUseCase {
+	if rotationGracePeriod < 0 {
+		rotationGracePeriod = 15 * time.Second
+	}
 	return &AuthUseCase{
-		users:      users,
-		sessions:   sessions,
-		sessionTTL: sessionTTL,
+		users:               users,
+		refreshTokens:       refreshTokens,
+		tokenManager:        tokenManager,
+		accessTokenTTL:      accessTokenTTL,
+		refreshTokenTTL:     refreshTokenTTL,
+		rotationGracePeriod: rotationGracePeriod,
 	}
 }
 
@@ -84,7 +122,6 @@ func (uc *AuthUseCase) Register(
 	}
 
 	user.PasswordHash = ""
-
 	return user, nil
 }
 
@@ -104,6 +141,7 @@ func isValidEmail(email string) bool {
 
 	return strings.Contains(email[at+1:], ".")
 }
+
 func (uc *AuthUseCase) Login(
 	ctx context.Context,
 	email string,
@@ -122,6 +160,9 @@ func (uc *AuthUseCase) Login(
 		}
 		return nil, err
 	}
+	if user == nil {
+		return nil, ErrInvalidCredentials
+	}
 
 	if err := bcrypt.CompareHashAndPassword(
 		[]byte(user.PasswordHash),
@@ -130,92 +171,238 @@ func (uc *AuthUseCase) Login(
 		return nil, ErrInvalidCredentials
 	}
 
-	if uc.sessionTTL <= 0 {
-		return nil, errors.New("session TTL must be positive")
+	if uc.accessTokenTTL <= 0 || uc.refreshTokenTTL <= 0 {
+		return nil, ErrInvalidTokenTTL
 	}
 
+	// 1. Generate JWT Access Token
+	accessToken, accessExpiry, err := uc.tokenManager.GenerateAccessToken(user.ID, user.Email, user.Role)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Generate 32 bytes cryptographically secure random Refresh Token
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return nil, err
 	}
+	rawRefreshToken := base64.RawURLEncoding.EncodeToString(tokenBytes)
 
-	token := base64.RawURLEncoding.EncodeToString(tokenBytes)
-	tokenHash := sha256.Sum256([]byte(token))
+	// 3. Hash Refresh Token with SHA-256 before storing
+	tokenHash := sha256.Sum256([]byte(rawRefreshToken))
+	encodedHash := base64.RawURLEncoding.EncodeToString(tokenHash[:])
+	refreshExpiry := time.Now().Add(uc.refreshTokenTTL)
 
-	session := &domain.Session{
+	refreshTokenRecord := &domain.RefreshToken{
 		UserID:    user.ID,
-		TokenHash: base64.RawURLEncoding.EncodeToString(tokenHash[:]),
-		ExpiresAt: time.Now().Add(uc.sessionTTL),
+		TokenHash: encodedHash,
+		ExpiresAt: refreshExpiry,
 	}
 
-	if err := uc.sessions.Create(ctx, session); err != nil {
+	if err := uc.refreshTokens.Create(ctx, refreshTokenRecord); err != nil {
 		return nil, err
 	}
 
 	user.PasswordHash = ""
 
 	return &LoginResult{
-		User:      user,
-		Token:     token,
-		ExpiresAt: session.ExpiresAt,
+		User:                  user,
+		AccessToken:           accessToken,
+		RefreshToken:          rawRefreshToken,
+		AccessTokenExpiresAt:  accessExpiry,
+		RefreshTokenExpiresAt: refreshExpiry,
+		Token:                 accessToken,
+		ExpiresAt:             accessExpiry,
 	}, nil
 }
-func (uc *AuthUseCase) Authenticate(
+
+func (uc *AuthUseCase) handleReplacedToken(
 	ctx context.Context,
-	token string,
-) (*domain.User, error) {
-	if token == "" {
-		return nil, ErrInvalidSession
-	}
-
-	tokenHash := sha256.Sum256([]byte(token))
-	encodedHash := base64.RawURLEncoding.EncodeToString(tokenHash[:])
-
-	session, err := uc.sessions.GetByTokenHash(ctx, encodedHash)
-
-	if errors.Is(err, domain.ErrSessionNotFound) {
-		return nil, ErrInvalidSession
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	if session == nil {
-		return nil, ErrInvalidSession
-	}
-
-	if !session.ExpiresAt.After(time.Now()) {
-		return nil, ErrInvalidSession
-	}
-
-	user, err := uc.users.GetByID(ctx, session.UserID)
-
-	if errors.Is(err, domain.ErrUserNotFound) {
-		return nil, ErrInvalidSession
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	if user == nil {
-		return nil, ErrInvalidSession
-	}
-
-	user.PasswordHash = ""
-	return user, nil
-}
-func (uc *AuthUseCase) Logout(
-	ctx context.Context,
-	token string,
+	record *domain.RefreshToken,
+	now time.Time,
 ) error {
-	if token == "" {
+	if record == nil {
 		return ErrInvalidSession
 	}
 
-	tokenHash := sha256.Sum256([]byte(token))
+	if !record.IsReplaced() {
+		if record.IsRevoked() {
+			return ErrRefreshTokenRevoked
+		}
+		if record.IsExpired(now) {
+			return ErrRefreshTokenExpired
+		}
+		return ErrInvalidSession
+	}
+
+	// Check if this replaced token is within the configured grace period
+	if record.IsWithinGracePeriod(uc.rotationGracePeriod, now) {
+		// Concurrent refresh within grace period: do NOT revoke token family!
+		return ErrConcurrentRefresh
+	}
+
+	// Malicious reuse detected outside grace period: revoke entire token family for this user
+	if record.UserID > 0 {
+		if err := uc.refreshTokens.RevokeAllForUser(ctx, record.UserID, now); err != nil {
+			return fmt.Errorf("failed to revoke all tokens for user %d upon token reuse: %w", record.UserID, err)
+		}
+	}
+
+	return ErrRefreshTokenReused
+}
+
+func (uc *AuthUseCase) Refresh(
+	ctx context.Context,
+	rawRefreshToken string,
+) (*LoginResult, error) {
+	if rawRefreshToken == "" {
+		return nil, ErrInvalidSession
+	}
+
+	if uc.accessTokenTTL <= 0 || uc.refreshTokenTTL <= 0 {
+		return nil, ErrInvalidTokenTTL
+	}
+
+	oldHash := sha256.Sum256([]byte(rawRefreshToken))
+	encodedOldHash := base64.RawURLEncoding.EncodeToString(oldHash[:])
+
+	// 1. Retrieve old token record to inspect status before rotation
+	oldRecord, err := uc.refreshTokens.GetByTokenHash(ctx, encodedOldHash)
+	if err != nil {
+		if errors.Is(err, domain.ErrRefreshTokenNotFound) {
+			return nil, ErrInvalidSession
+		}
+		return nil, err
+	}
+	if oldRecord == nil {
+		return nil, ErrInvalidSession
+	}
+
+	now := time.Now().UTC()
+
+	// 2. Detect token reuse early
+	if oldRecord.IsReplaced() {
+		return nil, uc.handleReplacedToken(ctx, oldRecord, now)
+	}
+
+	if oldRecord.IsRevoked() {
+		return nil, ErrRefreshTokenRevoked
+	}
+
+	if oldRecord.IsExpired(now) {
+		return nil, ErrRefreshTokenExpired
+	}
+
+	// 3. Verify user exists and fetch current role/email
+	user, err := uc.users.GetByID(ctx, oldRecord.UserID)
+	if err != nil {
+		if errors.Is(err, domain.ErrUserNotFound) {
+			return nil, ErrInvalidSession
+		}
+		return nil, err
+	}
+	if user == nil {
+		return nil, ErrInvalidSession
+	}
+	user.PasswordHash = ""
+
+	// 4. Pre-generate new Access Token
+	newAccessToken, newAccessExpiry, err := uc.tokenManager.GenerateAccessToken(user.ID, user.Email, user.Role)
+	if err != nil {
+		return nil, err
+	}
+
+	// 5. Generate new random Refresh Token
+	newTokenBytes := make([]byte, 32)
+	if _, err := rand.Read(newTokenBytes); err != nil {
+		return nil, err
+	}
+	newRawRefreshToken := base64.RawURLEncoding.EncodeToString(newTokenBytes)
+	newHash := sha256.Sum256([]byte(newRawRefreshToken))
+	encodedNewHash := base64.RawURLEncoding.EncodeToString(newHash[:])
+	newRefreshExpiry := now.Add(uc.refreshTokenTTL)
+
+	newRecord := &domain.RefreshToken{
+		UserID:    user.ID,
+		TokenHash: encodedNewHash,
+		ExpiresAt: newRefreshExpiry,
+		CreatedAt: now,
+	}
+
+	// 6. Execute atomic rotation in DB
+	err = uc.refreshTokens.Rotate(ctx, encodedOldHash, newRecord)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrRefreshTokenReused):
+			// Fetch the latest token state from DB to evaluate grace period against when it was actually replaced
+			latestRecord, getErr := uc.refreshTokens.GetByTokenHash(ctx, encodedOldHash)
+			if getErr != nil {
+				if errors.Is(getErr, domain.ErrRefreshTokenNotFound) {
+					return nil, ErrInvalidSession
+				}
+				return nil, getErr
+			}
+			if latestRecord == nil {
+				return nil, ErrInvalidSession
+			}
+			return nil, uc.handleReplacedToken(ctx, latestRecord, time.Now().UTC())
+
+		case errors.Is(err, domain.ErrRefreshTokenRevoked):
+			return nil, ErrRefreshTokenRevoked
+		case errors.Is(err, domain.ErrRefreshTokenExpired):
+			return nil, ErrRefreshTokenExpired
+		case errors.Is(err, domain.ErrRefreshTokenNotFound):
+			return nil, ErrInvalidSession
+		default:
+			return nil, err
+		}
+	}
+
+	return &LoginResult{
+		User:                  user,
+		AccessToken:           newAccessToken,
+		RefreshToken:          newRawRefreshToken,
+		AccessTokenExpiresAt:  newAccessExpiry,
+		RefreshTokenExpiresAt: newRefreshExpiry,
+		Token:                 newAccessToken,
+		ExpiresAt:             newAccessExpiry,
+	}, nil
+}
+
+func (uc *AuthUseCase) Logout(
+	ctx context.Context,
+	rawRefreshToken string,
+) error {
+	if rawRefreshToken == "" {
+		return ErrInvalidSession
+	}
+
+	tokenHash := sha256.Sum256([]byte(rawRefreshToken))
 	encodedHash := base64.RawURLEncoding.EncodeToString(tokenHash[:])
 
-	return uc.sessions.DeleteByTokenHash(ctx, encodedHash)
+	err := uc.refreshTokens.Revoke(ctx, encodedHash, time.Now())
+	if errors.Is(err, domain.ErrRefreshTokenNotFound) {
+		return ErrInvalidSession
+	}
+	return err
+}
+
+func (uc *AuthUseCase) Authenticate(
+	ctx context.Context,
+	accessToken string,
+) (*domain.User, error) {
+	if accessToken == "" {
+		return nil, ErrInvalidSession
+	}
+
+	claims, err := uc.tokenManager.ValidateAccessToken(accessToken)
+	if err != nil {
+		return nil, ErrInvalidSession
+	}
+
+	return &domain.User{
+		ID:    claims.UserID,
+		Email: claims.Email,
+		Role:  claims.Role,
+	}, nil
 }

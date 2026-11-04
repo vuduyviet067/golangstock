@@ -2,9 +2,9 @@ package http
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"gostock/internal/domain"
 	"gostock/internal/handle/http/response"
@@ -22,26 +22,15 @@ const authenticatedUserKey contextKey = "authenticatedUser"
 func AuthMiddleware(auth Authenticator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookie, err := r.Cookie("session")
-			if err != nil || cookie.Value == "" {
+			token := extractToken(r)
+			if token == "" {
 				response.Error(w, http.StatusUnauthorized, "authentication required")
 				return
 			}
 
-			user, err := auth.Authenticate(r.Context(), cookie.Value)
-
-			if errors.Is(err, usecase.ErrInvalidSession) {
-				response.Error(w, http.StatusUnauthorized, "invalid or expired session")
-				return
-			}
-
-			if err != nil {
-				response.Error(w, http.StatusInternalServerError, "internal server error")
-				return
-			}
-
-			if user == nil {
-				response.Error(w, http.StatusUnauthorized, "invalid or expired session")
+			user, err := auth.Authenticate(r.Context(), token)
+			if err != nil || user == nil {
+				response.Error(w, http.StatusUnauthorized, "invalid or expired token")
 				return
 			}
 
@@ -49,6 +38,32 @@ func AuthMiddleware(auth Authenticator) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func extractToken(r *http.Request) string {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader != "" {
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+			token := strings.TrimSpace(parts[1])
+			if token != "" {
+				return token
+			}
+		}
+	}
+
+	cookie, err := r.Cookie(AccessTokenCookieName)
+	if err == nil && cookie.Value != "" {
+		return cookie.Value
+	}
+
+	// Legacy cookie fallback
+	legacyCookie, err := r.Cookie(LegacySessionCookie)
+	if err == nil && legacyCookie.Value != "" {
+		return legacyCookie.Value
+	}
+
+	return ""
 }
 
 func CurrentUser(ctx context.Context) (*domain.User, bool) {

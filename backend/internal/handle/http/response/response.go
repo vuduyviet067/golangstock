@@ -2,9 +2,12 @@ package response
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 )
+
+// InternalServerErrorMessage is the unified safe message for HTTP 500 responses.
+const InternalServerErrorMessage = "Internal server error"
 
 // Response represents the standard unified API response envelope.
 type Response struct {
@@ -22,6 +25,11 @@ func Success(w http.ResponseWriter, status int, message string, data any) {
 	})
 }
 
+// Created writes a standard HTTP 201 Created response with the given message and payload.
+func Created(w http.ResponseWriter, message string, data any) {
+	Success(w, http.StatusCreated, message, data)
+}
+
 // Error writes a standard error response with the given status code and message.
 // The data field is explicitly set to nil and serializes as null.
 func Error(w http.ResponseWriter, status int, message string) {
@@ -29,6 +37,48 @@ func Error(w http.ResponseWriter, status int, message string) {
 		Success: false,
 		Message: message,
 		Data:    nil,
+	})
+}
+
+// ValidationError writes a standard HTTP 400 Bad Request error response with field-level details in data.
+func ValidationError(w http.ResponseWriter, message string, fields map[string]string) {
+	write(w, http.StatusBadRequest, Response{
+		Success: false,
+		Message: message,
+		Data: map[string]any{
+			"fields": fields,
+		},
+	})
+}
+
+// PaginatedData defines the standard envelope payload for paginated lists inside the data field.
+type PaginatedData struct {
+	Items      any            `json:"items"`
+	Pagination PaginationMeta `json:"pagination"`
+}
+
+// PaginationMeta contains pagination metadata.
+type PaginationMeta struct {
+	Page       int   `json:"page"`
+	Limit      int   `json:"limit"`
+	Total      int64 `json:"total"`
+	TotalPages int   `json:"total_pages"`
+}
+
+// Paginated writes a standard HTTP 200 OK response with items and pagination metadata encapsulated inside data.
+func Paginated(w http.ResponseWriter, message string, items any, page, limit int, total int64) {
+	totalPages := 0
+	if limit > 0 {
+		totalPages = int((total + int64(limit) - 1) / int64(limit))
+	}
+	Success(w, http.StatusOK, message, PaginatedData{
+		Items: items,
+		Pagination: PaginationMeta{
+			Page:       page,
+			Limit:      limit,
+			Total:      total,
+			TotalPages: totalPages,
+		},
 	})
 }
 
@@ -50,11 +100,11 @@ func write(w http.ResponseWriter, status int, payload any) {
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("response: failed to marshal JSON: %v", err)
+		slog.Error("response: failed to marshal JSON", slog.String("error", err.Error()))
 		w.WriteHeader(http.StatusInternalServerError)
 		fallback := Response{
 			Success: false,
-			Message: "internal server error",
+			Message: InternalServerErrorMessage,
 			Data:    nil,
 		}
 		fallbackBytes, _ := json.Marshal(fallback)
@@ -64,6 +114,6 @@ func write(w http.ResponseWriter, status int, payload any) {
 
 	w.WriteHeader(status)
 	if _, err := w.Write(append(body, '\n')); err != nil {
-		log.Printf("response: failed to write response body: %v", err)
+		slog.Error("response: failed to write response body", slog.String("error", err.Error()))
 	}
 }

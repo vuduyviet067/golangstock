@@ -14,11 +14,16 @@ import (
 
 type AuthHandler struct {
 	useCase *usecase.AuthUseCase
+	cookies *CookieManager
 }
 
-func NewAuthHandler(uc *usecase.AuthUseCase) *AuthHandler {
+func NewAuthHandler(uc *usecase.AuthUseCase, cookies *CookieManager) *AuthHandler {
+	if cookies == nil {
+		cookies = NewCookieManager(false, http.SameSiteLaxMode, 15*time.Minute, 7*24*time.Hour)
+	}
 	return &AuthHandler{
 		useCase: uc,
+		cookies: cookies,
 	}
 }
 
@@ -33,6 +38,7 @@ type loginResponse struct {
 	Role      string `json:"role"`
 	CreatedAt string `json:"created_at"`
 }
+
 type registerRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
@@ -71,24 +77,20 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.useCase.Register(r.Context(), req.Email, req.Password)
 	if err != nil {
-		switch {
-		case errors.Is(err, usecase.ErrInvalidEmail):
-			response.Error(w, http.StatusBadRequest, "invalid email")
-		case errors.Is(err, usecase.ErrInvalidPassword):
-			response.Error(w, http.StatusBadRequest, "invalid password")
-		case errors.Is(err, domain.ErrEmailExists):
-			response.Error(w, http.StatusConflict, "email already exists")
-		default:
-			response.Error(w, http.StatusInternalServerError, "internal server error")
-		}
+		WriteError(w, r, err)
 		return
+	}
+
+	createdAtStr := ""
+	if !user.CreatedAt.IsZero() {
+		createdAtStr = user.CreatedAt.Format(time.RFC3339)
 	}
 
 	response.Success(w, http.StatusCreated, "User registered successfully", authUserResponse{
 		ID:        user.ID,
 		Email:     user.Email,
 		Role:      user.Role,
-		CreatedAt: user.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		CreatedAt: createdAtStr,
 	})
 }
 
@@ -118,32 +120,65 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.useCase.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
-		if errors.Is(err, usecase.ErrInvalidCredentials) {
-			response.Error(w, http.StatusUnauthorized, "invalid email or password")
-			return
-		}
-
-		response.Error(w, http.StatusInternalServerError, "internal server error")
+		WriteError(w, r, err)
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "session",
-		Value:    result.Token,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   r.TLS != nil,
-		SameSite: http.SameSiteLaxMode,
-		Expires:  result.ExpiresAt,
-		MaxAge:   int(time.Until(result.ExpiresAt).Seconds()),
-	})
+	h.cookies.SetAuthCookies(w, result.AccessToken, result.RefreshToken)
+
+	createdAtStr := ""
+	if !result.User.CreatedAt.IsZero() {
+		createdAtStr = result.User.CreatedAt.Format(time.RFC3339)
+	}
+
 	response.Success(w, http.StatusOK, "Login successful", loginResponse{
 		ID:        result.User.ID,
 		Email:     result.User.Email,
 		Role:      result.User.Role,
-		CreatedAt: result.User.CreatedAt.Format(time.RFC3339),
+		CreatedAt: createdAtStr,
 	})
 }
+
+func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	cookie, err := r.Cookie(RefreshTokenCookieName)
+	if err != nil || cookie.Value == "" {
+		response.Error(w, http.StatusUnauthorized, "refresh token required")
+		return
+	}
+
+	result, err := h.useCase.Refresh(r.Context(), cookie.Value)
+	if err != nil {
+		httpErr := MapError(err)
+		if httpErr.StatusCode == http.StatusUnauthorized {
+
+			h.cookies.ClearAuthCookies(w)
+		}
+
+		WriteError(w, r, httpErr)
+		return
+	}
+
+	h.cookies.SetAuthCookies(w, result.AccessToken, result.RefreshToken)
+
+	createdAtStr := ""
+	if !result.User.CreatedAt.IsZero() {
+		createdAtStr = result.User.CreatedAt.Format(time.RFC3339)
+	}
+
+	response.Success(w, http.StatusOK, "Token refreshed successfully", authUserResponse{
+		ID:        result.User.ID,
+		Email:     result.User.Email,
+		Role:      result.User.Role,
+		CreatedAt: createdAtStr,
+	})
+}
+
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -152,30 +187,24 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user, ok := CurrentUser(r.Context())
-	if !ok {
+	if !ok || user == nil {
 		response.Error(w, http.StatusUnauthorized, "authentication required")
 		return
+	}
+
+	createdAtStr := ""
+	if !user.CreatedAt.IsZero() {
+		createdAtStr = user.CreatedAt.Format(time.RFC3339)
 	}
 
 	response.Success(w, http.StatusOK, "User profile retrieved successfully", authUserResponse{
 		ID:        user.ID,
 		Email:     user.Email,
 		Role:      user.Role,
-		CreatedAt: user.CreatedAt.Format(time.RFC3339),
+		CreatedAt: createdAtStr,
 	})
 }
-func clearSessionCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     "session",
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   false,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1,
-		Expires:  time.Unix(1, 0),
-	})
-}
+
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -183,15 +212,28 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cookie, err := r.Cookie("session")
+	h.cookies.ClearAuthCookies(w)
+
+	cookie, err := r.Cookie(RefreshTokenCookieName)
 	if err == nil && cookie.Value != "" {
-		if err := h.useCase.Logout(r.Context(), cookie.Value); err != nil {
-			response.Error(w, http.StatusInternalServerError, "could not log out")
-			return
+		logoutErr := h.useCase.Logout(r.Context(), cookie.Value)
+		if logoutErr != nil {
+			switch {
+			case errors.Is(logoutErr, usecase.ErrInvalidSession),
+				errors.Is(logoutErr, domain.ErrRefreshTokenNotFound),
+				errors.Is(logoutErr, domain.ErrRefreshTokenRevoked),
+				errors.Is(logoutErr, domain.ErrRefreshTokenExpired),
+				errors.Is(logoutErr, domain.ErrInvalidRefreshToken),
+				errors.Is(logoutErr, domain.ErrRefreshTokenReused):
+				// Idempotent: token already invalid, revoked, expired, reused or missing is considered successful logout
+			default:
+				// Infrastructure or database failure: report 500 error, but cookies were already cleared
+				WriteError(w, r, logoutErr)
+				return
+			}
 		}
 	}
 
-	clearSessionCookie(w)
 	response.Success(w, http.StatusOK, "logged out", map[string]string{
 		"message": "logged out",
 	})
