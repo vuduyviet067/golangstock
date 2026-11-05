@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gostock/internal/domain"
+	"gostock/internal/repository"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -47,8 +48,8 @@ type TokenManager interface {
 }
 
 type AuthUseCase struct {
-	users               domain.UserRepository
-	refreshTokens       domain.RefreshTokenRepository
+	users               repository.UserRepository
+	refreshTokens       repository.RefreshTokenRepository
 	tokenManager        TokenManager
 	accessTokenTTL      time.Duration
 	refreshTokenTTL     time.Duration
@@ -68,8 +69,8 @@ type LoginResult struct {
 }
 
 func NewAuthUseCase(
-	users domain.UserRepository,
-	refreshTokens domain.RefreshTokenRepository,
+	users repository.UserRepository,
+	refreshTokens repository.RefreshTokenRepository,
 	tokenManager TokenManager,
 	accessTokenTTL time.Duration,
 	refreshTokenTTL time.Duration,

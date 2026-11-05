@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gostock/internal/domain"
+	"gostock/internal/repository"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -324,4 +325,4 @@ func (r *RefreshTokenRepository) RevokeAllForUser(
 	return nil
 }
 
-var _ domain.RefreshTokenRepository = (*RefreshTokenRepository)(nil)
+var _ repository.RefreshTokenRepository = (*RefreshTokenRepository)(nil)

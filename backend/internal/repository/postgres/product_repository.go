@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"gostock/internal/domain"
+	"gostock/internal/repository"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -311,4 +312,4 @@ func (r *ProductRepository) StockOut(
 	return product, nil
 }
 
-var _ domain.ProductRepository = (*ProductRepository)(nil)
+var _ repository.ProductRepository = (*ProductRepository)(nil)

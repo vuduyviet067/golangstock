@@ -58,6 +58,10 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !EnforceJSONContentType(w, r) {
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
 	var req registerRequest
@@ -98,6 +102,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if !EnforceJSONContentType(w, r) {
 		return
 	}
 

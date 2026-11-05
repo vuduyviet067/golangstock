@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gostock/internal/domain"
+	"gostock/internal/repository"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -250,5 +251,5 @@ func (r *UserRepository) UpdateAndRevokeTokens(
 	return tx.Commit()
 }
 
-var _ domain.UserRepository = (*UserRepository)(nil)
-var _ domain.UserManagementRepository = (*UserRepository)(nil)
+var _ repository.UserRepository = (*UserRepository)(nil)
+var _ repository.UserManagementRepository = (*UserRepository)(nil)

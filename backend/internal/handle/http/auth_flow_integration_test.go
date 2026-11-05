@@ -50,6 +50,7 @@ func TestAuthFlow_FullLifecycle_Mock(t *testing.T) {
 	// 1. Register
 	regBody := `{"email":"testflow@example.com","password":"StrongPassword123"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader([]byte(regBody)))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
@@ -66,6 +67,7 @@ func TestAuthFlow_FullLifecycle_Mock(t *testing.T) {
 	// Password hash is verified inside uc, so let's hash it:
 	loginBody := `{"email":"testflow@example.com","password":"StrongPassword123"}`
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader([]byte(loginBody)))
+	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	// Because mock repo does not run bcrypt, let's verify login handler works when valid
@@ -167,6 +169,7 @@ func TestAuthFlow_FullLifecycle_PostgreSQL(t *testing.T) {
 		"password": testPassword,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(regPayload))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
@@ -179,6 +182,7 @@ func TestAuthFlow_FullLifecycle_PostgreSQL(t *testing.T) {
 		"password": testPassword,
 	})
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(loginPayload))
+	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {

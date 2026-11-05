@@ -13,6 +13,7 @@ import (
 
 	"gostock/internal/domain"
 	"gostock/internal/handle/http/response"
+	"gostock/internal/repository"
 	"gostock/internal/usecase"
 
 	"golang.org/x/crypto/bcrypt"
@@ -41,7 +42,7 @@ func (m *mockUserRepo) GetByID(ctx context.Context, id int64) (*domain.User, err
 	return &copy, nil
 }
 
-var _ domain.UserRepository = (*mockUserRepo)(nil)
+var _ repository.UserRepository = (*mockUserRepo)(nil)
 
 type mockRefreshRepo struct {
 	token         *domain.RefreshToken
@@ -164,6 +165,7 @@ func TestAuthHandler_LoginSuccessAndCookies(t *testing.T) {
 
 	reqBody := `{"email":"user@example.com","password":"password123"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
 	handler.Login(rec, req)
@@ -233,6 +235,7 @@ func TestAuthHandler_LoginWrongCredentials(t *testing.T) {
 
 	reqBody := `{"email":"user@example.com","password":"wrongpassword"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader([]byte(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
 	handler.Login(rec, req)

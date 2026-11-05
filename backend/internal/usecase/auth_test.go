@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gostock/internal/domain"
+	"gostock/internal/repository"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -62,7 +63,7 @@ func (f *fakeUserRepository) Create(ctx context.Context, user *domain.User) erro
 	return nil
 }
 
-var _ domain.UserRepository = (*fakeUserRepository)(nil)
+var _ repository.UserRepository = (*fakeUserRepository)(nil)
 
 type fakeRefreshTokenRepository struct {
 	mu         sync.Mutex
@@ -199,8 +200,8 @@ func (f *fakeTokenManager) ValidateAccessToken(tokenStr string) (*TokenClaims, e
 }
 
 func newTestAuthUseCase(
-	users domain.UserRepository,
-	tokens domain.RefreshTokenRepository,
+	users repository.UserRepository,
+	tokens repository.RefreshTokenRepository,
 	tm TokenManager,
 ) *AuthUseCase {
 	if tm == nil {

@@ -1,14 +1,6 @@
 package domain
 
-import (
-	"errors"
-	"time"
-)
-
-var (
-	ErrUserNotFound = errors.New("user not found")
-	ErrEmailExists  = errors.New("email already exists")
-)
+import "time"
 
 type User struct {
 	ID           int64

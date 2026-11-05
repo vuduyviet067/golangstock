@@ -11,19 +11,14 @@ import (
 	"time"
 
 	"gostock/config"
-	"gostock/internal/domain"
 	"gostock/internal/platform/database"
 	"gostock/internal/repository/postgres"
+	"gostock/internal/usecase"
 
-	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/term"
 )
 
-const (
-	passwordMinLen = 8
-	passwordMaxLen = 72
-	dbTimeout      = 10 * time.Second
-)
+const dbTimeout = 10 * time.Second
 
 func main() {
 	if err := run(); err != nil {
@@ -32,29 +27,24 @@ func main() {
 	}
 }
 
+// run is the CLI's composition root: it collects input, wires dependencies,
+// and delegates all business rules (validation, duplicate check, hashing,
+// role assignment) to usecase.AdminUseCase.
 func run() error {
 	fmt.Println("==================================================")
 	fmt.Println(" GoStock - First Admin Account Initialization CLI")
 	fmt.Println("==================================================")
 
-	// 1. Read admin email interactively
+	// 1. Read admin credentials interactively. Confirmation is an interaction
+	// concern, so it stays here; validation belongs to the use case.
 	email, err := readEmail()
 	if err != nil {
 		return fmt.Errorf("read email: %w", err)
 	}
 
-	if err := validateEmail(email); err != nil {
-		return fmt.Errorf("invalid email: %w", err)
-	}
-
-	// 2. Read admin password and confirmation securely (no echo)
 	password, err := readPassword("Enter admin password: ")
 	if err != nil {
 		return fmt.Errorf("read password: %w", err)
-	}
-
-	if err := validatePassword(password); err != nil {
-		return fmt.Errorf("invalid password: %w", err)
 	}
 
 	confirmPassword, err := readPassword("Confirm admin password: ")
@@ -66,55 +56,34 @@ func run() error {
 		return errors.New("passwords do not match")
 	}
 
-	// 3. Load database configuration
-	cfg, err := config.Load()
+	// 2. Load database configuration. Only DATABASE_URL is needed here, so
+	// server-only settings (JWT_SECRET, CORS_ALLOWED_ORIGINS) are not required.
+	databaseURL, err := config.LoadDatabaseURL()
 	if err != nil {
 		return fmt.Errorf("load configuration: %w", err)
 	}
 
-	// 4. Open PostgreSQL connection
-	db, err := database.OpenPostgres(cfg.DatabaseURL)
+	// 3. Open PostgreSQL connection
+	db, err := database.OpenPostgres(databaseURL)
 	if err != nil {
 		return fmt.Errorf("connect to database: %w", err)
 	}
 	defer db.Close()
 
+	// 4. Wire dependencies
+	adminUseCase := usecase.NewAdminUseCase(postgres.NewUserRepository(db))
+
+	// 5. Create the admin account
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
-	userRepo := postgres.NewUserRepository(db)
-
-	// 5. Pre-check: Ensure account does not already exist
-	existingUser, err := userRepo.GetByEmail(ctx, email)
-	if err != nil && !errors.Is(err, domain.ErrUserNotFound) {
-		return fmt.Errorf("check existing user: %w", err)
-	}
-	if existingUser != nil {
-		return fmt.Errorf("an account with email %q already exists; operation aborted without changes", email)
-	}
-
-	// 6. Hash password using bcrypt
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	admin, err := adminUseCase.CreateAdmin(ctx, email, password)
 	if err != nil {
-		return fmt.Errorf("hash password: %w", err)
-	}
-
-	// 7. Create domain.User with Role: "admin"
-	adminUser := &domain.User{
-		Email:        email,
-		PasswordHash: string(passwordHash),
-		Role:         "admin",
-	}
-
-	if err := userRepo.Create(ctx, adminUser); err != nil {
-		if errors.Is(err, domain.ErrEmailExists) {
-			return fmt.Errorf("an account with email %q already exists; operation aborted", email)
-		}
 		return fmt.Errorf("create admin account: %w", err)
 	}
 
 	fmt.Printf("\nSuccess: Admin account %q (ID: %d, Role: %s) created successfully.\n",
-		adminUser.Email, adminUser.ID, adminUser.Role)
+		admin.Email, admin.ID, admin.Role)
 	return nil
 }
 
@@ -152,38 +121,4 @@ func readPassword(prompt string) (string, error) {
 	}
 
 	return string(bytePassword), nil
-}
-
-func validateEmail(email string) error {
-	if email == "" {
-		return errors.New("email cannot be empty")
-	}
-	if len(email) > 255 {
-		return errors.New("email length cannot exceed 255 characters")
-	}
-
-	at := strings.IndexByte(email, '@')
-	if at <= 0 || at == len(email)-1 {
-		return errors.New("email must contain a valid '@' symbol with local and domain parts")
-	}
-
-	if strings.ContainsAny(email, " \t\r\n") {
-		return errors.New("email cannot contain whitespace")
-	}
-
-	if !strings.Contains(email[at+1:], ".") {
-		return errors.New("email domain must contain at least one '.'")
-	}
-
-	return nil
-}
-
-func validatePassword(password string) error {
-	if len(password) < passwordMinLen {
-		return fmt.Errorf("password must be at least %d characters", passwordMinLen)
-	}
-	if len(password) > passwordMaxLen {
-		return fmt.Errorf("password cannot exceed %d characters", passwordMaxLen)
-	}
-	return nil
 }

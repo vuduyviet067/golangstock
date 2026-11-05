@@ -100,6 +100,10 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !EnforceJSONContentType(w, r) {
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
 	var product domain.Product
@@ -142,6 +146,10 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil || id <= 0 {
 		response.Error(w, http.StatusBadRequest, "invalid product ID")
+		return
+	}
+
+	if !EnforceJSONContentType(w, r) {
 		return
 	}
 
@@ -221,6 +229,10 @@ func (h *ProductHandler) StockIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !EnforceJSONContentType(w, r) {
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
 	var req struct {
@@ -268,6 +280,10 @@ func (h *ProductHandler) StockOut(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil || id <= 0 {
 		response.Error(w, http.StatusBadRequest, "invalid product ID")
+		return
+	}
+
+	if !EnforceJSONContentType(w, r) {
 		return
 	}
 

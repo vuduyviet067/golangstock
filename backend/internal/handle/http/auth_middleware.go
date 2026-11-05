@@ -57,12 +57,6 @@ func extractToken(r *http.Request) string {
 		return cookie.Value
 	}
 
-	// Legacy cookie fallback
-	legacyCookie, err := r.Cookie(LegacySessionCookie)
-	if err == nil && legacyCookie.Value != "" {
-		return legacyCookie.Value
-	}
-
 	return ""
 }
 

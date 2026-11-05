@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gostock/internal/domain"
+	"gostock/internal/repository"
 )
 
 type mockUserRepo struct {
@@ -65,7 +66,7 @@ func (m *mockUserRepo) UpdateAndRevokeTokens(ctx context.Context, user *domain.U
 	return nil
 }
 
-var _ domain.UserManagementRepository = (*mockUserRepo)(nil)
+var _ repository.UserManagementRepository = (*mockUserRepo)(nil)
 
 func TestUserUseCase_GetByID(t *testing.T) {
 	t.Run("success clears PasswordHash", func(t *testing.T) {

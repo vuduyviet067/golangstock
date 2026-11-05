@@ -15,6 +15,7 @@ import (
 	"gostock/config"
 	"gostock/internal/domain"
 	productHTTP "gostock/internal/handle/http"
+	"gostock/internal/repository"
 	"gostock/internal/usecase"
 )
 
@@ -86,8 +87,8 @@ func (f *fakeUserRepo) UpdateAndRevokeTokens(ctx context.Context, user *domain.U
 	return nil
 }
 
-var _ domain.UserRepository = (*fakeUserRepo)(nil)
-var _ domain.UserManagementRepository = (*fakeUserRepo)(nil)
+var _ repository.UserRepository = (*fakeUserRepo)(nil)
+var _ repository.UserManagementRepository = (*fakeUserRepo)(nil)
 
 type fakeRefreshTokenRepo struct{}
 
@@ -333,7 +334,7 @@ func TestProductRoutes_AuthorizationMatrix(t *testing.T) {
 				req.Header.Set("Content-Type", "application/json")
 			}
 			if tt.token != "" {
-				req.AddCookie(&http.Cookie{Name: "session", Value: tt.token})
+				req.AddCookie(&http.Cookie{Name: productHTTP.AccessTokenCookieName, Value: tt.token})
 			}
 
 			rec := httptest.NewRecorder()
@@ -819,4 +820,204 @@ func TestApp_Lifecycle(t *testing.T) {
 			t.Fatal("expected error on nil server, got nil")
 		}
 	})
+}
+
+// startTestConfig returns a configuration that newApp accepts.
+func startTestConfig() config.Config {
+	return config.Config{
+		DatabaseURL:             "postgres://user:pass@localhost:5432/gostock?sslmode=disable",
+		HTTPPort:                "8080",
+		JWTSecret:               "this-is-a-valid-secret-with-at-least-32-bytes-long!",
+		JWTIssuer:               "gostock",
+		JWTAudience:             "gostock-api",
+		AccessTokenTTL:          15 * time.Minute,
+		RefreshTokenTTL:         7 * 24 * time.Hour,
+		RefreshTokenGracePeriod: 15 * time.Second,
+	}
+}
+
+// countingOpener returns a dbOpener that hands out db and counts its calls.
+func countingOpener(db *sql.DB) (dbOpener, *int) {
+	calls := new(int)
+	return func(string) (*sql.DB, error) {
+		*calls++
+		return db, nil
+	}, calls
+}
+
+// runStartUntilReady runs start in a goroutine, cancels its context once the
+// listener is bound, and returns start's result.
+func runStartUntilReady(t *testing.T, cfg config.Config, opener dbOpener) error {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ready := make(chan struct{})
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- start(ctx, cfg, opener, startOptions{ready: ready, listenAddr: "127.0.0.1:0"})
+	}()
+
+	select {
+	case <-ready:
+		cancel()
+	case err := <-errCh:
+		t.Fatalf("start returned before the listener was ready: %v", err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for the listener to be ready")
+	}
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for start to return after cancellation")
+		return nil
+	}
+}
+
+func TestStart_InvalidJWTConfigDoesNotOpenDatabase(t *testing.T) {
+	cfg := startTestConfig()
+	cfg.JWTSecret = "too-short"
+	opener, calls := countingOpener(nil)
+
+	err := start(context.Background(), cfg, opener, startOptions{})
+
+	if err == nil {
+		t.Fatal("expected an error for an invalid JWT secret, got nil")
+	}
+	if !strings.Contains(err.Error(), "initialize application") || !strings.Contains(err.Error(), "initialize jwt service") {
+		t.Errorf("error %q should mention initialize application and initialize jwt service", err)
+	}
+	if *calls != 0 {
+		t.Errorf("database opener called %d times, want 0", *calls)
+	}
+}
+
+func TestStart_DatabaseOpenFailure(t *testing.T) {
+	dbErr := errors.New("database unreachable")
+	opener := func(string) (*sql.DB, error) { return nil, dbErr }
+
+	err := start(context.Background(), startTestConfig(), opener, startOptions{})
+
+	if !errors.Is(err, dbErr) {
+		t.Fatalf("error = %v, want it to wrap the opener error", err)
+	}
+	if !strings.Contains(err.Error(), "initialize application") {
+		t.Errorf("error %q should mention initialize application", err)
+	}
+}
+
+func TestStart_CancelledContextDoesNotOpenDatabase(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	opener, calls := countingOpener(nil)
+
+	err := start(ctx, startTestConfig(), opener, startOptions{})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want it to wrap context.Canceled", err)
+	}
+	if *calls != 0 {
+		t.Errorf("database opener called %d times, want 0", *calls)
+	}
+}
+
+func TestStart_GracefulShutdownClosesDatabaseOnce(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("create sqlmock: %v", err)
+	}
+	mock.ExpectClose() // exactly one Close is expected
+	opener, calls := countingOpener(db)
+
+	if err := runStartUntilReady(t, startTestConfig(), opener); err != nil {
+		t.Fatalf("expected nil after graceful shutdown, got: %v", err)
+	}
+	if *calls != 1 {
+		t.Errorf("database opener called %d times, want 1", *calls)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("database was not closed exactly once: %v", err)
+	}
+}
+
+func TestStart_ListenFailureStillClosesDatabase(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("create sqlmock: %v", err)
+	}
+	mock.ExpectClose()
+	opener, _ := countingOpener(db)
+
+	cfg := startTestConfig()
+	cfg.HTTPPort = "99999" // out of range: net.Listen fails through the real config path
+
+	err = start(context.Background(), cfg, opener, startOptions{})
+
+	if err == nil {
+		t.Fatal("expected a listen error, got nil")
+	}
+	if !strings.Contains(err.Error(), "run application") || !strings.Contains(err.Error(), "listen on") {
+		t.Errorf("error %q should mention run application and listen on", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("database was not closed exactly once after a listen failure: %v", err)
+	}
+}
+
+// TestStart_RunAndCloseFailuresBothReported simulates a shutdown signal that
+// arrives while the database is being opened: Run then fails with
+// context.Canceled, and Close also fails. Both errors must stay discoverable.
+func TestStart_RunAndCloseFailuresBothReported(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("create sqlmock: %v", err)
+	}
+	closeErr := errors.New("simulated close failure")
+	mock.ExpectClose().WillReturnError(closeErr)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	opener := func(string) (*sql.DB, error) {
+		cancel() // the "signal" arrives during startup
+		return db, nil
+	}
+
+	err = start(ctx, startTestConfig(), opener, startOptions{listenAddr: "127.0.0.1:0"})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("error %v should wrap context.Canceled (the Run failure)", err)
+	}
+	if !errors.Is(err, closeErr) {
+		t.Errorf("error %v should wrap the Close failure", err)
+	}
+	if !strings.Contains(err.Error(), "run application") || !strings.Contains(err.Error(), "close database") {
+		t.Errorf("error %q should mention both run application and close database", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("database Close was not attempted: %v", err)
+	}
+}
+
+func TestStart_CloseFailureAfterSuccessfulRun(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("create sqlmock: %v", err)
+	}
+	closeErr := errors.New("simulated close failure")
+	mock.ExpectClose().WillReturnError(closeErr)
+	opener, _ := countingOpener(db)
+
+	err = runStartUntilReady(t, startTestConfig(), opener)
+
+	if !errors.Is(err, closeErr) {
+		t.Fatalf("error = %v, want the Close failure to be returned", err)
+	}
+	if strings.Contains(err.Error(), "run application") {
+		t.Errorf("error %q must not report a Run failure after a clean shutdown", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("database Close was not attempted: %v", err)
+	}
 }

@@ -87,6 +87,7 @@ func TestProductHandlerConcurrentStockOut(t *testing.T) {
 				path,
 				strings.NewReader(`{"quantity":4}`),
 			)
+			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
 			handler.StockOut(rec, req)

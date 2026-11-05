@@ -158,11 +158,14 @@ func TestAuthMiddlewareBearerTokenPrecedence(t *testing.T) {
 	}
 }
 
-func TestAuthMiddlewareLegacySessionCookie(t *testing.T) {
-	expectedUser := &domain.User{ID: 1, Role: "user"}
-	auth := &fakeAuthenticator{user: expectedUser}
+// TestAuthMiddlewareIgnoresLegacySessionCookie guards the removal of the
+// pre-JWT "session" cookie: it must no longer be read as a credential.
+func TestAuthMiddlewareIgnoresLegacySessionCookie(t *testing.T) {
+	auth := &fakeAuthenticator{user: &domain.User{ID: 1, Role: "user"}}
 
+	nextCalled := false
 	handler := AuthMiddleware(auth)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
@@ -171,11 +174,14 @@ func TestAuthMiddlewareLegacySessionCookie(t *testing.T) {
 
 	handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
-	if auth.token != "legacy-token" {
-		t.Errorf("token = %q, want 'legacy-token'", auth.token)
+	if nextCalled {
+		t.Error("next handler must not be called for a request carrying only the legacy session cookie")
+	}
+	if auth.token != "" {
+		t.Errorf("Authenticate was called with %q; the legacy session cookie must not be read", auth.token)
 	}
 }
 

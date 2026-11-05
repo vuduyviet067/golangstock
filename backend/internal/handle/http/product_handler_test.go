@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"gostock/internal/domain"
+	"gostock/internal/repository"
 	"gostock/internal/usecase"
 )
 
@@ -128,7 +129,7 @@ func (f *fakeProductRepository) StockOut(
 	return &product, nil
 }
 
-func newTestHandler(repo domain.ProductRepository) *ProductHandler {
+func newTestHandler(repo repository.ProductRepository) *ProductHandler {
 	uc := usecase.NewProductUseCase(repo)
 	return NewProductHandler(uc)
 }
@@ -428,6 +429,7 @@ func TestCreate(t *testing.T) {
 				"/api/v1/products",
 				strings.NewReader(tt.body),
 			)
+			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
 			handler.Create(rec, req)
@@ -581,6 +583,7 @@ func TestUpdate(t *testing.T) {
 				tt.path,
 				strings.NewReader(tt.body),
 			)
+			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
 			handler.Update(rec, req)
@@ -852,6 +855,7 @@ func TestStockIn(t *testing.T) {
 				tt.path,
 				strings.NewReader(tt.body),
 			)
+			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
 			handler.StockIn(rec, req)
@@ -985,6 +989,7 @@ func TestStockOut(t *testing.T) {
 			handler := newTestHandler(repo)
 
 			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
 			handler.StockOut(rec, req)

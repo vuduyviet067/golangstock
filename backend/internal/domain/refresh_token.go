@@ -1,20 +1,6 @@
 package domain
 
-import (
-	"context"
-	"errors"
-	"time"
-)
-
-var (
-	ErrRefreshTokenNotFound = errors.New("refresh token not found")
-	ErrRefreshTokenRevoked  = errors.New("refresh token has been revoked")
-	ErrRefreshTokenExpired  = errors.New("refresh token has expired")
-	ErrRefreshTokenReused   = errors.New("refresh token has already been used and replaced")
-	ErrConcurrentRefresh    = errors.New("concurrent refresh in progress")
-	ErrTokenOwnerMismatch   = errors.New("refresh token user mismatch")
-	ErrInvalidRefreshToken  = errors.New("invalid refresh token")
-)
+import "time"
 
 type RefreshToken struct {
 	ID             int64
@@ -48,12 +34,4 @@ func (t *RefreshToken) IsWithinGracePeriod(gracePeriod time.Duration, now time.T
 	}
 	elapsed := now.Sub(t.RevokedAt.UTC())
 	return elapsed >= 0 && elapsed <= gracePeriod
-}
-
-type RefreshTokenRepository interface {
-	Create(ctx context.Context, token *RefreshToken) error
-	GetByTokenHash(ctx context.Context, tokenHash string) (*RefreshToken, error)
-	Rotate(ctx context.Context, oldTokenHash string, newToken *RefreshToken) error
-	Revoke(ctx context.Context, tokenHash string, revokedAt time.Time) error
-	RevokeAllForUser(ctx context.Context, userID int64, revokedAt time.Time) error
 }

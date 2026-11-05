@@ -18,9 +18,17 @@ const (
 	defaultRefreshTTLDays   = 7
 	defaultRefreshGraceSecs = 15
 	defaultHTTPPort         = "8080"
+
+	EnvDevelopment = "development"
+	EnvDev         = "dev"
+	EnvTest        = "test"
+	EnvStaging     = "staging"
+	EnvProduction  = "production"
+	EnvProd        = "prod"
 )
 
 type Config struct {
+	AppEnv                  string
 	DatabaseURL             string
 	HTTPPort                string
 	JWTSecret               string
@@ -34,10 +42,104 @@ type Config struct {
 	AllowedOrigins          []string
 }
 
-func Load() (Config, error) {
+// IsProduction reports whether the configured environment is production or prod.
+func (c Config) IsProduction() bool {
+	return isProduction(c.AppEnv)
+}
+
+func isProduction(env string) bool {
+	return env == EnvProduction || env == EnvProd
+}
+
+// isDeployed reports whether env is a deployed environment (staging or
+// production). Deployed environments must configure JWT_SECRET and
+// CORS_ALLOWED_ORIGINS explicitly; development defaults never apply to them.
+func isDeployed(env string) bool {
+	return env == EnvStaging || isProduction(env)
+}
+
+// deployedLabel returns the environment name used in configuration errors,
+// collapsing the "prod" alias to "production".
+func deployedLabel(env string) string {
+	if isProduction(env) {
+		return EnvProduction
+	}
+	return env
+}
+
+// validateDeployedJWTSecret enforces JWT_SECRET hygiene for staging and
+// production: the secret must be set, must not be the publicly known
+// development secret, and must not have surrounding whitespace.
+//
+// This helper does not enforce the 32-byte minimum length; Load checks that
+// for every environment after this helper returns.
+//
+// These checks reject missing, whitespace-only, padded, and default values.
+// Together with Load's length check, they still cannot prove the secret has
+// enough entropy; it must be generated randomly, for example with:
+// openssl rand -base64 48
+//
+// Error messages never include the secret value.
+func validateDeployedJWTSecret(secret, env string) error {
+	label := deployedLabel(env)
+	trimmed := strings.TrimSpace(secret)
+	if trimmed == "" {
+		return fmt.Errorf("JWT_SECRET environment variable is required in %s; generate one with: openssl rand -base64 48", label)
+	}
+	if trimmed == defaultDevSecret {
+		return fmt.Errorf("cannot use default development secret in %s", label)
+	}
+	if secret != trimmed {
+		return fmt.Errorf("JWT_SECRET cannot contain leading or trailing whitespace in %s", label)
+	}
+	return nil
+}
+
+// LoadDatabaseURL validates and returns DATABASE_URL. It reads nothing else,
+// so programs that only need database access (such as cmd/createadmin) are not
+// subject to HTTP-server settings like JWT_SECRET or CORS_ALLOWED_ORIGINS.
+// Load uses it too, so the DATABASE_URL rule is defined in one place.
+func LoadDatabaseURL() (string, error) {
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
-		return Config{}, errors.New("DATABASE_URL environment variable is required")
+		return "", errors.New("DATABASE_URL environment variable is required")
+	}
+	return databaseURL, nil
+}
+
+// resolveEnvironment determines and validates the application environment from APP_ENV and ENV.
+// Trimming and case normalization are applied. APP_ENV takes precedence over ENV.
+// If neither is set or non-empty, it defaults to "development".
+func resolveEnvironment() (string, error) {
+	rawAppEnv := strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
+	rawEnv := strings.ToLower(strings.TrimSpace(os.Getenv("ENV")))
+
+	var env string
+	if rawAppEnv != "" {
+		env = rawAppEnv
+	} else if rawEnv != "" {
+		env = rawEnv
+	} else {
+		env = EnvDevelopment
+	}
+
+	switch env {
+	case EnvDevelopment, EnvDev, EnvTest, EnvStaging, EnvProduction, EnvProd:
+		return env, nil
+	default:
+		return "", fmt.Errorf("unsupported environment %q: must be one of 'development', 'dev', 'test', 'staging', 'production', or 'prod'", env)
+	}
+}
+
+// Load reads and validates the HTTP server configuration from the environment.
+//
+// Staging and production (see isDeployed) require an explicit JWT_SECRET and
+// an explicit https-only CORS_ALLOWED_ORIGINS allowlist; development and test
+// fall back to built-in defaults for both.
+func Load() (Config, error) {
+	databaseURL, err := LoadDatabaseURL()
+	if err != nil {
+		return Config{}, err
 	}
 
 	port := os.Getenv("HTTP_PORT")
@@ -50,18 +152,15 @@ func Load() (Config, error) {
 		}
 	}
 
-	appEnv := os.Getenv("APP_ENV")
-	if appEnv == "" {
-		appEnv = os.Getenv("ENV")
+	appEnv, err := resolveEnvironment()
+	if err != nil {
+		return Config{}, err
 	}
 
 	jwtSecret := os.Getenv("JWT_SECRET")
-	if appEnv == "production" {
-		if jwtSecret == "" {
-			return Config{}, errors.New("JWT_SECRET environment variable is required in production")
-		}
-		if jwtSecret == defaultDevSecret {
-			return Config{}, errors.New("cannot use default development secret in production")
+	if isDeployed(appEnv) {
+		if err := validateDeployedJWTSecret(jwtSecret, appEnv); err != nil {
+			return Config{}, err
 		}
 	} else if jwtSecret == "" {
 		jwtSecret = defaultDevSecret
@@ -112,13 +211,17 @@ func Load() (Config, error) {
 
 	cookieSecure := false
 	if val := os.Getenv("COOKIE_SECURE"); val != "" {
-		parsed, err := strconv.ParseBool(val)
+		parsed, err := strconv.ParseBool(strings.TrimSpace(val))
 		if err != nil {
 			return Config{}, fmt.Errorf("COOKIE_SECURE must be a boolean value (true/false), got %q: %w", val, err)
 		}
 		cookieSecure = parsed
-	} else if appEnv == "production" {
+	} else if isProduction(appEnv) {
 		cookieSecure = true
+	}
+
+	if isProduction(appEnv) && !cookieSecure {
+		return Config{}, errors.New("COOKIE_SECURE cannot be false in production")
 	}
 
 	cookieSameSite := http.SameSiteLaxMode
@@ -136,19 +239,21 @@ func Load() (Config, error) {
 		}
 	}
 
-	allowedOrigins := []string{"http://localhost:5173", "http://localhost:3000"}
-	if val := os.Getenv("CORS_ALLOWED_ORIGINS"); val != "" {
-		parts := strings.Split(val, ",")
-		allowedOrigins = make([]string, 0, len(parts))
-		for _, p := range parts {
-			trimmed := strings.TrimSpace(p)
-			if trimmed != "" {
-				allowedOrigins = append(allowedOrigins, trimmed)
-			}
-		}
+	if cookieSameSite == http.SameSiteNoneMode && !cookieSecure {
+		return Config{}, errors.New("COOKIE_SAMESITE=none requires COOKIE_SECURE=true")
+	}
+
+	// Validated last, so errors in earlier settings are reported first.
+	// LookupEnv distinguishes "unset" (development defaults apply) from
+	// "explicitly set to an empty value" (an error in every environment).
+	rawOrigins, originsSet := os.LookupEnv("CORS_ALLOWED_ORIGINS")
+	allowedOrigins, err := parseAllowedOrigins(rawOrigins, originsSet, appEnv)
+	if err != nil {
+		return Config{}, err
 	}
 
 	return Config{
+		AppEnv:                  appEnv,
 		DatabaseURL:             databaseURL,
 		HTTPPort:                port,
 		JWTSecret:               jwtSecret,

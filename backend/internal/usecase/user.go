@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gostock/internal/domain"
+	"gostock/internal/repository"
 )
 
 var (
@@ -24,11 +25,11 @@ type UpdateUserInput struct {
 }
 
 type UserUseCase struct {
-	repo domain.UserManagementRepository
+	repo repository.UserManagementRepository
 }
 
 func NewUserUseCase(
-	repo domain.UserManagementRepository,
+	repo repository.UserManagementRepository,
 ) *UserUseCase {
 	return &UserUseCase{
 		repo: repo,

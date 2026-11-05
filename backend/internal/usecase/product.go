@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"gostock/internal/domain"
+	"gostock/internal/repository"
 )
 
 var (
@@ -15,10 +16,10 @@ var (
 )
 
 type ProductUseCase struct {
-	repo domain.ProductRepository
+	repo repository.ProductRepository
 }
 
-func NewProductUseCase(repo domain.ProductRepository) *ProductUseCase {
+func NewProductUseCase(repo repository.ProductRepository) *ProductUseCase {
 	return &ProductUseCase{
 		repo: repo,
 	}

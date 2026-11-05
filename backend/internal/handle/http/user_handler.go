@@ -135,6 +135,10 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !EnforceJSONContentType(w, r) {
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()

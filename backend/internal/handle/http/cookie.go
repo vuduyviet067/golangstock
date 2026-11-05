@@ -8,7 +8,6 @@ import (
 const (
 	AccessTokenCookieName  = "access_token"
 	RefreshTokenCookieName = "refresh_token"
-	LegacySessionCookie    = "session"
 
 	AccessTokenCookiePath  = "/"
 	RefreshTokenCookiePath = "/api/v1/auth"
@@ -76,17 +75,6 @@ func (cm *CookieManager) ClearAuthCookies(w http.ResponseWriter) {
 		Name:     RefreshTokenCookieName,
 		Value:    "",
 		Path:     RefreshTokenCookiePath,
-		HttpOnly: true,
-		Secure:   cm.secure,
-		SameSite: cm.sameSite,
-		Expires:  past,
-		MaxAge:   -1,
-	})
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     LegacySessionCookie,
-		Value:    "",
-		Path:     "/",
 		HttpOnly: true,
 		Secure:   cm.secure,
 		SameSite: cm.sameSite,

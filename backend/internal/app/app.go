@@ -213,6 +213,55 @@ func (a *App) Run(ctx context.Context) error {
 	}
 }
 
+// Start builds the application from cfg, serves HTTP until ctx is cancelled,
+// and always releases the resources it opened. It is the single entry point a
+// process needs: callers own only the context (for example, one cancelled by
+// OS signals) and the configuration, never the App or its database.
+//
+// The returned error wraps whichever step failed. If closing the database also
+// fails, that error is joined with it, so both remain discoverable with
+// errors.Is; a cleanup failure after a clean shutdown is returned on its own.
+func Start(ctx context.Context, cfg config.Config) error {
+	return start(ctx, cfg, database.OpenPostgres, startOptions{})
+}
+
+// startOptions are test seams for start. The zero value is production behavior.
+type startOptions struct {
+	// ready, if non-nil, is closed once the network listener is bound.
+	ready chan struct{}
+	// listenAddr, if non-empty, overrides the server address so tests can
+	// bind to 127.0.0.1:0 instead of every interface.
+	listenAddr string
+}
+
+func start(ctx context.Context, cfg config.Config, opener dbOpener, opts startOptions) (err error) {
+	// Do not open resources for a process that is already shutting down.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("start application: %w", ctxErr)
+	}
+
+	// newApp closes the database itself if construction fails after opening it.
+	application, err := newApp(cfg, opener, nil)
+	if err != nil {
+		return fmt.Errorf("initialize application: %w", err)
+	}
+	defer func() {
+		if closeErr := application.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+	}()
+
+	application.readyCh = opts.ready
+	if opts.listenAddr != "" {
+		application.server.Addr = opts.listenAddr
+	}
+
+	if runErr := application.Run(ctx); runErr != nil {
+		return fmt.Errorf("run application: %w", runErr)
+	}
+	return nil
+}
+
 // Close closes the underlying database connection pool safely.
 // It is nil-safe, idempotent, and guarantees database resources are not closed multiple times.
 func (a *App) Close() error {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gostock/internal/domain"
+	"gostock/internal/repository"
 	"gostock/internal/usecase"
 )
 
@@ -52,7 +53,7 @@ func (m *mockUserRepoForHandler) UpdateAndRevokeTokens(ctx context.Context, user
 	return nil
 }
 
-var _ domain.UserManagementRepository = (*mockUserRepoForHandler)(nil)
+var _ repository.UserManagementRepository = (*mockUserRepoForHandler)(nil)
 
 func setupUserHandler(repo *mockUserRepoForHandler) *UserHandler {
 	uc := usecase.NewUserUseCase(repo)
@@ -355,6 +356,7 @@ func TestUserHandler_Update(t *testing.T) {
 		handler := setupUserHandler(repo)
 
 		req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/10", bytes.NewBufferString(`{}`))
+		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		handler.Update(rec, req)
 
@@ -374,6 +376,7 @@ func TestUserHandler_Update(t *testing.T) {
 
 		// Invalid email
 		req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/10", bytes.NewBufferString(`{"email":"bad-email"}`))
+		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		handler.Update(rec, req)
 		if rec.Code != http.StatusBadRequest {
@@ -382,6 +385,7 @@ func TestUserHandler_Update(t *testing.T) {
 
 		// Invalid role
 		req = httptest.NewRequest(http.MethodPatch, "/api/v1/users/10", bytes.NewBufferString(`{"role":"superadmin"}`))
+		req.Header.Set("Content-Type", "application/json")
 		rec = httptest.NewRecorder()
 		handler.Update(rec, req)
 		if rec.Code != http.StatusBadRequest {
@@ -402,6 +406,7 @@ func TestUserHandler_Update(t *testing.T) {
 		handler := setupUserHandler(repo)
 
 		req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/10", bytes.NewBufferString(`{"email":"taken@example.com"}`))
+		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		handler.Update(rec, req)
 
@@ -419,6 +424,7 @@ func TestUserHandler_Update(t *testing.T) {
 		handler := setupUserHandler(repo)
 
 		req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/99", bytes.NewBufferString(`{"role":"admin"}`))
+		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		handler.Update(rec, req)
 
