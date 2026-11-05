@@ -1,0 +1,1 @@
+-- No-op: the baseline does not create or modify existing objects.

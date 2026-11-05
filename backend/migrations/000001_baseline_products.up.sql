@@ -1,0 +1,3 @@
+-- Baseline: documents the existing products schema.
+-- Intentionally does not execute CREATE TABLE.
+-- The products table already exists in the current database.

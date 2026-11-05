@@ -25,44 +25,100 @@ The project focuses on product CRUD operations, search, pagination, sorting, and
 - Test successful operations, invalid quantities, missing products, and concurrent stock-out requests.
 
 ## Project Structure
-
-```text
+```
 gostock/
-├── database.go
-├── main.go
-├── product.go
-├── product_handlers.go
-├── product_handlers_test.go
-├── go.mod
-├── go.sum
+├── backend/
+│   ├── main.go
+│   ├── database.go
+│   ├── health.go
+│   ├── go.mod
+│   ├── go.sum
+│   └── internal/
+│       ├── domain/
+│       │   ├── product.go
+│       │   └── product_repository.go
+│       ├── usecase/
+│       │   ├── product.go
+│       │   └── product_test.go
+│       ├── repository/
+│       │   └── postgres/
+│       │       └── product_repository.go
+│       └── handle/
+│           └── http/
+│               ├── product_handler.go
+│               ├── product_handler_test.go
+│               └── product_handler_integration_test.go
+├── frontend/
+├── deploy/
+├── docs/
+├── .env.example
+├── .gitignore
 └── README.md
 ```
-
 ## Prerequisites
 
 - Go installed
-- PostgreSQL installed and running
-- A PostgreSQL database named `gostock`
+- PostgreSQL 17 installed and running
+- An empty PostgreSQL database named `gostock`
+- The [golang-migrate](https://github.com/golang-migrate/migrate) CLI built with the PostgreSQL driver:
+
+```bash
+go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+```
 
 ## Setup
 
-### 1. Create the database and products table
+### 1. Create the database
 
-Create a PostgreSQL database named `gostock`, connect to it, and execute:
+Create an empty PostgreSQL database named `gostock`. Do not create application tables by hand; the migrations in `backend/migrations` create them.
 
-```sql
-CREATE TABLE products (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    sku VARCHAR(50) NOT NULL UNIQUE,
-    name VARCHAR(200) NOT NULL,
-    price NUMERIC(12, 2) NOT NULL CHECK (price >= 0),
-    quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+### 2. Configure the database connection
+
+Copy `.env.example` to `.env` and replace `YOUR_PASSWORD` with your local PostgreSQL password.
+
+The application reads `DATABASE_URL` from the environment. It does not automatically load `.env`, so set the variable in your terminal.
+
+For Git Bash:
+
+```bash
+export DATABASE_URL='postgres://postgres:YOUR_PASSWORD@localhost:5432/gostock?sslmode=disable'
 ```
 
-Optional sample data:
+Never commit real credentials to Git.
+
+### 3. Install dependencies
+
+Run these commands from the project root:
+
+```bash
+cd backend
+go mod download
+```
+
+### 4. Run the database migrations
+
+From the `backend` directory, with `DATABASE_URL` set:
+
+```bash
+migrate -path migrations -database "$DATABASE_URL" up
+migrate -path migrations -database "$DATABASE_URL" version
+```
+
+A fresh database must run every migration, starting from `000001`. After `up`, `version` reports the highest migration number and the database contains:
+
+| Table | Created by |
+|---|---|
+| `users` | `000002_create_users` |
+| `refresh_tokens` | `000004_create_refresh_tokens` |
+| `products` | `000006_create_or_validate_products` |
+
+`sessions` is legacy history: `000003` creates it and `000005` drops it, so it does not exist after `up`. `000001_baseline_products` is a marker only and creates nothing.
+
+If `products` was created by hand before migrations managed it, `000006` validates that table against the expected schema instead of creating it. On any difference it changes nothing, reports every mismatch, and leaves the migration version marked dirty at 6. Fix the reported differences, then run `migrate -path migrations -database "$DATABASE_URL" force 5` and `up` again. Do not use `force` to skip the validation.
+
+**Rollback behavior:** Rolling back one step from version 6 (`migrate down 1`) intentionally does not drop `products`. Migration `000006` may have adopted a pre-existing table containing application data, and its down migration cannot distinguish an adopted table from one it created. Therefore, after rolling back, the database remains at version 5 while `products` still exists. Only drop the table manually when working with a disposable database and after verifying that its data is no longer needed.
+
+Optional sample data, after the migrations have run:
 
 ```sql
 INSERT INTO products (sku, name, price, quantity)
@@ -71,98 +127,34 @@ VALUES
     ('MS-001', 'Wireless Mouse', 350000, 15);
 ```
 
-### 2. Configure the database connection
+### 5. Create the first administrator
 
-Set the `DATABASE_URL` environment variable. Replace `YOUR_PASSWORD` with your PostgreSQL password.
-
-For Git Bash:
+New accounts get the `user` role. Create the first `admin` account with the operator CLI, from the `backend` directory, with `DATABASE_URL` set and migrations applied:
 
 ```bash
-export DATABASE_URL='postgres://postgres:YOUR_PASSWORD@localhost:5432/gostock?sslmode=disable'
+go run ./cmd/createadmin
 ```
 
-Do not commit database passwords or other secrets to Git.
+The CLI prompts for the email, the password and its confirmation. In a terminal the password is not echoed. The password must be 8 to 72 bytes, and the command fails if the email is already registered.
 
-### 3. Download dependencies
+### 6. Start the API
 
-```bash
-go mod download
-```
-
-### 4. Run the server
+From the `backend` directory:
 
 ```bash
 go run .
 ```
 
-The server address and port are configured in `main.go`.
-
-## API Endpoints
-
-Base path: `/api/v1`
-
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/health` | Check server health |
-| GET | `/api/v1/products` | List products |
-| GET | `/api/v1/products/{id}` | Retrieve a product |
-| POST | `/api/v1/products` | Create a product |
-| PUT | `/api/v1/products/{id}` | Update a product |
-| DELETE | `/api/v1/products/{id}` | Delete a product |
-| POST | `/api/v1/products/{id}/stock-in` | Increase stock |
-| POST | `/api/v1/products/{id}/stock-out` | Decrease stock |
-
-### Search, pagination, and sorting
-
-Example requests:
-
-```http
-GET /api/v1/products?q=mouse
-GET /api/v1/products?page=1&limit=2
-GET /api/v1/products?sortBy=price&order=asc
-```
-
-### Stock-in example
-
-```http
-POST /api/v1/products/1/stock-in
-Content-Type: application/json
-
-{
-  "quantity": 5
-}
-```
-
-### Stock-out example
-
-```http
-POST /api/v1/products/1/stock-out
-Content-Type: application/json
-
-{
-  "quantity": 3
-}
-```
-
-## Concurrency and Inventory Safety
-
-Stock-out uses a conditional SQL update:
-
-```sql
-UPDATE products
-SET quantity = quantity - $1,
-    updated_at = NOW()
-WHERE id = $2
-  AND quantity >= $1
-RETURNING id, sku, name, price, quantity;
-```
-
-The quantity check and update happen in a single SQL statement. PostgreSQL coordinates concurrent updates to the same row, helping prevent overselling and negative inventory.
-
-- `409 Conflict`: insufficient stock.
-- `404 Not Found`: product does not exist.
-
+The server listens on port `8080` by default. Set the `HTTP_PORT` environment variable to use a different port.
 ## Testing
+
+Run the following commands from the `backend` directory.
+
+Check Go formatting:
+
+```bash
+gofmt -l $(find . -type f -name '*.go')
+```
 
 Run all tests:
 
@@ -170,19 +162,20 @@ Run all tests:
 go test -v -count=1 ./...
 ```
 
-The current test suite covers:
+Run static analysis:
 
-- Successful stock-in and stock-out.
-- Insufficient stock.
-- Zero and negative quantities.
-- Non-existent products.
-- Concurrent stock-out requests.
+```bash
+go vet ./...
+```
 
-The integration tests require a reachable PostgreSQL database configured through `DATABASE_URL`.
+The test suite includes HTTP handler tests, use case validation tests, and PostgreSQL integration tests for concurrent stock-out requests.
+
+PostgreSQL integration tests run only when `DATABASE_URL` is set; otherwise they are skipped. A skipped integration test is not a passed one. They require a database migrated to the latest version, and they write to it: they insert and delete products and users and create refresh tokens. Point `DATABASE_URL` at a dedicated database you are allowed to modify, never a shared or production database.
 
 ## Future Improvements
 
-- Add structured logging and request timeouts.
+- Add structured logging and HTTP server timeouts.
 - Document the API with OpenAPI.
-- Expand test coverage for product CRUD, search, and pagination.
+- Expand test coverage for product listing, filtering, pagination, sorting, and error handling.
 - Configure CI to run automated tests.
+- Improve health checks by verifying database connectivity when appropriate.
