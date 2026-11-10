@@ -4,13 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -18,9 +16,8 @@ import (
 	"gostock/internal/dto"
 	"gostock/internal/platform/jwt"
 	"gostock/internal/repository/postgres"
+	"gostock/internal/testdb"
 	"gostock/internal/usecase"
-
-	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 func TestAuthFlow_FullLifecycle_Mock(t *testing.T) {
@@ -118,23 +115,7 @@ func TestAuthFlow_FullLifecycle_Mock(t *testing.T) {
 }
 
 func TestAuthFlow_FullLifecycle_PostgreSQL(t *testing.T) {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		t.Skip("DATABASE_URL is not set; skipping live Postgres E2E integration test")
-	}
-
-	db, err := sql.Open("pgx", dsn)
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
-	defer db.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := db.PingContext(ctx); err != nil {
-		t.Fatalf("connect to PostgreSQL: %v", err)
-	}
+	db := testdb.Open(t)
 
 	userRepo := postgres.NewUserRepository(db)
 	refreshRepo := postgres.NewRefreshTokenRepository(db)

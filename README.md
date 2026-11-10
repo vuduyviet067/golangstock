@@ -467,11 +467,33 @@ go build ./...
 
 The test suite covers configuration validation, domain and use-case behavior, HTTP handlers and middleware, application lifecycle, and PostgreSQL repository behavior.
 
-PostgreSQL integration tests run only when `DATABASE_URL` is set. Otherwise, they are skipped; a skipped integration test is not a passed test.
+### Configure the integration test database
 
-Integration tests require a database migrated to the latest version. They may insert and delete products and users and create refresh tokens.
+PostgreSQL integration tests use a dedicated test database configured by `TEST_DATABASE_URL`. They never read `DATABASE_URL`, so loading `.env` cannot point them at the development database.
 
-Always use a dedicated test database that you are allowed to modify. Never point integration tests at a shared or production database.
+- If `TEST_DATABASE_URL` is not set, integration tests are skipped. A skipped integration test is not a passed test.
+- Before any test writes data, it checks `current_database()`. The test fails immediately unless the database name ends with `_test`.
+
+Integration tests insert and delete products and users and create refresh tokens. Use a database that you are allowed to modify, never a shared or production database.
+
+Create the test database once (for example, `CREATE DATABASE gostock_test;`), then migrate it to the latest version from the `backend` directory:
+
+```bash
+export TEST_DATABASE_URL='postgres://postgres:YOUR_PASSWORD@localhost:5432/gostock_test?sslmode=disable'
+migrate -path migrations -database "$TEST_DATABASE_URL" up
+```
+
+Run the full suite, including integration tests:
+
+```bash
+go test -count=1 ./...
+```
+
+To set the variable for a single run without exporting it:
+
+```bash
+TEST_DATABASE_URL='postgres://postgres:YOUR_PASSWORD@localhost:5432/gostock_test?sslmode=disable' go test -count=1 ./...
+```
 
 ## Current Scope and Future Improvements
 

@@ -2,10 +2,8 @@ package http
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -14,36 +12,22 @@ import (
 	stdhttp "net/http"
 
 	"gostock/internal/repository/postgres"
+	"gostock/internal/testdb"
 	"gostock/internal/usecase"
-
-	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 func TestProductHandlerConcurrentStockOut(t *testing.T) {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		t.Skip("DATABASE_URL is not set")
-	}
-
-	db, err := sql.Open("pgx", dsn)
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	defer db.Close()
+	db := testdb.Open(t)
 
 	ctx, cancel := context.WithTimeout(
 		context.Background(), 5*time.Second,
 	)
 	defer cancel()
 
-	if err := db.PingContext(ctx); err != nil {
-		t.Fatalf("connect to PostgreSQL: %v", err)
-	}
-
 	sku := fmt.Sprintf("INTEGRATION-%d", time.Now().UnixNano())
 
 	var id int64
-	err = db.QueryRowContext(ctx, `
+	err := db.QueryRowContext(ctx, `
 		INSERT INTO products (sku, name, price, quantity)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id
@@ -145,28 +129,15 @@ func TestProductHandlerConcurrentStockOut(t *testing.T) {
 // against PostgreSQL: a product edit made after a stock-out must keep the
 // current stock, and a PUT carrying a stale quantity is rejected unchanged.
 func TestProductUpdateCannotRestoreStaleStock(t *testing.T) {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		t.Skip("DATABASE_URL is not set")
-	}
-
-	db, err := sql.Open("pgx", dsn)
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	defer db.Close()
+	db := testdb.Open(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := db.PingContext(ctx); err != nil {
-		t.Fatalf("connect to PostgreSQL: %v", err)
-	}
-
 	sku := fmt.Sprintf("CR15-%d", time.Now().UnixNano())
 
 	var id int64
-	err = db.QueryRowContext(ctx, `
+	err := db.QueryRowContext(ctx, `
 		INSERT INTO products (sku, name, price, quantity)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id

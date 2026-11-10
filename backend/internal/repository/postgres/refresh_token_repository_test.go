@@ -5,16 +5,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"gostock/internal/domain"
+	"gostock/internal/testdb"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jackc/pgx/v5/pgconn"
-	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 func TestRefreshTokenRepository_CreateSuccess(t *testing.T) {
@@ -969,30 +968,18 @@ func TestRefreshTokenRepository_RevokeAllForUser(t *testing.T) {
 	}
 }
 
-// Integration test against real PostgreSQL when DATABASE_URL is set
+// Integration test against the dedicated PostgreSQL test database in
+// TEST_DATABASE_URL; see testdb.Open.
 func TestRefreshTokenRepository_IntegrationConcurrentRotation(t *testing.T) {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		t.Skip("DATABASE_URL is not set; skipping live Postgres integration concurrency test")
-	}
-
-	db, err := sql.Open("pgx", dsn)
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	defer db.Close()
+	db := testdb.Open(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := db.PingContext(ctx); err != nil {
-		t.Fatalf("connect to PostgreSQL: %v", err)
-	}
-
 	// 1. Create a temporary user for testing
 	testEmail := fmt.Sprintf("test-token-%d@example.com", time.Now().UnixNano())
 	var userID int64
-	err = db.QueryRowContext(ctx, `
+	err := db.QueryRowContext(ctx, `
 		INSERT INTO users (email, password_hash, role)
 		VALUES ($1, 'hash', 'user')
 		RETURNING id
