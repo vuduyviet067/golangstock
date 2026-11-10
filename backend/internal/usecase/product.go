@@ -85,7 +85,9 @@ func (uc *ProductUseCase) Update(
 		return ErrInvalidProduct
 	}
 
-	if product.Price < 0 || product.Quantity < 0 {
+	// Quantity is not an update field: stock changes only through StockIn and
+	// StockOut, and the repository does not write it on Update.
+	if product.Price < 0 {
 		return ErrInvalidProduct
 	}
 

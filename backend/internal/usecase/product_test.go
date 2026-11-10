@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"gostock/internal/domain"
@@ -18,6 +19,9 @@ type fakeProductRepository struct {
 	listCalled     bool
 	stockInCalled  bool
 	stockOutCalled bool
+
+	// storedQuantity simulates the stock the database reports from Update.
+	storedQuantity int
 }
 
 func (f *fakeProductRepository) GetByID(
@@ -41,6 +45,7 @@ func (f *fakeProductRepository) Update(
 	product *domain.Product,
 ) error {
 	f.updateCalled = true
+	product.Quantity = f.storedQuantity
 	return nil
 }
 
@@ -192,6 +197,62 @@ func TestUpdateInvalidID(t *testing.T) {
 	}
 	if repo.updateCalled {
 		t.Fatal("repository Update should not be called for invalid ID")
+	}
+}
+
+// TestUpdatePreservesStoredQuantity guards CR-15: a stale quantity on the
+// product passed to Update must not survive; the result carries the stock the
+// repository reports, and quantity is not validated as an update field.
+func TestUpdatePreservesStoredQuantity(t *testing.T) {
+	repo := &fakeProductRepository{storedQuantity: 7}
+	uc := NewProductUseCase(repo)
+
+	product := &domain.Product{
+		ID:       1,
+		SKU:      "SKU001",
+		Name:     "Renamed",
+		Price:    100,
+		Quantity: 10, // stale value from an old form
+	}
+
+	if err := uc.Update(context.Background(), product); err != nil {
+		t.Fatalf("Update returned error: %v", err)
+	}
+	if !repo.updateCalled {
+		t.Fatal("repository Update was not called")
+	}
+	if product.Quantity != 7 {
+		t.Errorf("quantity after Update = %d, want stored 7 (stale 10 must not survive)", product.Quantity)
+	}
+}
+
+func TestUpdateInvalidProduct(t *testing.T) {
+	tests := []struct {
+		name    string
+		product domain.Product
+	}{
+		{"empty SKU", domain.Product{ID: 1, SKU: " ", Name: "Keyboard", Price: 100}},
+		{"empty name", domain.Product{ID: 1, SKU: "SKU001", Name: "", Price: 100}},
+		{"SKU too long", domain.Product{ID: 1, SKU: strings.Repeat("A", 51), Name: "Keyboard", Price: 100}},
+		{"name too long", domain.Product{ID: 1, SKU: "SKU001", Name: strings.Repeat("N", 201), Price: 100}},
+		{"negative price", domain.Product{ID: 1, SKU: "SKU001", Name: "Keyboard", Price: -0.01}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &fakeProductRepository{}
+			uc := NewProductUseCase(repo)
+
+			product := tt.product
+			err := uc.Update(context.Background(), &product)
+
+			if !errors.Is(err, ErrInvalidProduct) {
+				t.Fatalf("expected ErrInvalidProduct, got %v", err)
+			}
+			if repo.updateCalled {
+				t.Fatal("repository Update should not be called for an invalid product")
+			}
+		})
 	}
 }
 

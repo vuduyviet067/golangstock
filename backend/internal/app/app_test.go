@@ -140,7 +140,7 @@ func TestProductRoutes_AuthorizationMatrix(t *testing.T) {
 	router := setupTestRouter()
 
 	validCreateBody := `{"sku":"NEW-SKU","name":"New Product","price":99,"quantity":10}`
-	validUpdateBody := `{"sku":"UPD-SKU","name":"Updated Product","price":120,"quantity":15}`
+	validUpdateBody := `{"sku":"UPD-SKU","name":"Updated Product","price":120}`
 	validStockBody := `{"quantity":5}`
 
 	tests := []struct {

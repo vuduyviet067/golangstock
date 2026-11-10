@@ -87,31 +87,28 @@ func (r *ProductRepository) Update(
 	ctx context.Context,
 	product *domain.Product,
 ) error {
-	result, err := r.db.ExecContext(
+	// quantity is intentionally not written: stock changes only through
+	// StockIn/StockOut. RETURNING reports the current stored quantity.
+	err := r.db.QueryRowContext(
 		ctx,
 		`UPDATE products
 		 SET sku = $1,
 		     name = $2,
 		     price = $3,
-		     quantity = $4,
 		     updated_at = NOW()
-		 WHERE id = $5`,
+		 WHERE id = $4
+		 RETURNING quantity`,
 		product.SKU,
 		product.Name,
 		product.Price,
-		product.Quantity,
 		product.ID,
-	)
+	).Scan(&product.Quantity)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.ErrProductNotFound
+	}
 	if err != nil {
 		return mapProductError(err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rowsAffected == 0 {
-		return domain.ErrProductNotFound
 	}
 
 	return nil

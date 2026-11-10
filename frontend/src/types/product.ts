@@ -21,11 +21,12 @@ export interface CreateProductInput {
   quantity: number;
 }
 
+// quantity is intentionally absent: stock changes only via stock-in/stock-out,
+// and the API rejects a PUT body that contains quantity.
 export interface UpdateProductInput {
   sku: string;
   name: string;
   price: number;
-  quantity: number;
 }
 
 export interface StockAdjustmentInput {

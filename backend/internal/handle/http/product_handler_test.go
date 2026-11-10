@@ -24,6 +24,9 @@ type fakeProductRepository struct {
 
 	updateErr      error
 	updatedProduct *domain.Product
+	// storedQuantity simulates the quantity the database returns from
+	// Update (RETURNING quantity); Update never writes it.
+	storedQuantity int
 	deleteErr      error
 
 	stockInErr     error
@@ -66,6 +69,7 @@ func (f *fakeProductRepository) Update(
 	copiedProduct := *product
 	f.updatedProduct = &copiedProduct
 
+	product.Quantity = f.storedQuantity
 	return nil
 }
 
@@ -490,14 +494,14 @@ func TestUpdate(t *testing.T) {
 			name:       "success",
 			method:     http.MethodPut,
 			path:       "/api/v1/products/1",
-			body:       `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
+			body:       `{"sku":"SKU001","name":"Keyboard","price":100}`,
 			wantStatus: http.StatusOK,
 		},
 		{
 			name:           "invalid ID format",
 			method:         http.MethodPut,
 			path:           "/api/v1/products/abc",
-			body:           `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
+			body:           `{"sku":"SKU001","name":"Keyboard","price":100}`,
 			wantStatus:     http.StatusBadRequest,
 			wantBodyString: `"message":"invalid product ID"`,
 		},
@@ -505,7 +509,7 @@ func TestUpdate(t *testing.T) {
 			name:           "zero ID",
 			method:         http.MethodPut,
 			path:           "/api/v1/products/0",
-			body:           `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
+			body:           `{"sku":"SKU001","name":"Keyboard","price":100}`,
 			wantStatus:     http.StatusBadRequest,
 			wantBodyString: `"message":"invalid product ID"`,
 		},
@@ -521,7 +525,7 @@ func TestUpdate(t *testing.T) {
 			name:           "invalid product",
 			method:         http.MethodPut,
 			path:           "/api/v1/products/1",
-			body:           `{"sku":"","name":"Keyboard","price":100,"quantity":5}`,
+			body:           `{"sku":"","name":"Keyboard","price":100}`,
 			wantStatus:     http.StatusBadRequest,
 			wantBodyString: `"message":"Invalid product"`,
 		},
@@ -529,7 +533,7 @@ func TestUpdate(t *testing.T) {
 			name:           "product not found",
 			method:         http.MethodPut,
 			path:           "/api/v1/products/99",
-			body:           `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
+			body:           `{"sku":"SKU001","name":"Keyboard","price":100}`,
 			repoErr:        domain.ErrProductNotFound,
 			wantStatus:     http.StatusNotFound,
 			wantBodyString: `"message":"Product not found"`,
@@ -538,7 +542,7 @@ func TestUpdate(t *testing.T) {
 			name:           "duplicate SKU",
 			method:         http.MethodPut,
 			path:           "/api/v1/products/1",
-			body:           `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
+			body:           `{"sku":"SKU001","name":"Keyboard","price":100}`,
 			repoErr:        domain.ErrProductSKUExists,
 			wantStatus:     http.StatusConflict,
 			wantBodyString: `"message":"SKU already exists"`,
@@ -547,7 +551,7 @@ func TestUpdate(t *testing.T) {
 			name:           "repository internal error",
 			method:         http.MethodPut,
 			path:           "/api/v1/products/1",
-			body:           `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
+			body:           `{"sku":"SKU001","name":"Keyboard","price":100}`,
 			repoErr:        errors.New("database connection failed"),
 			wantStatus:     http.StatusInternalServerError,
 			wantBodyString: `"message":"Internal server error"`,
@@ -556,7 +560,7 @@ func TestUpdate(t *testing.T) {
 			name:           "wrong HTTP method",
 			method:         http.MethodPost,
 			path:           "/api/v1/products/1",
-			body:           `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
+			body:           `{"sku":"SKU001","name":"Keyboard","price":100}`,
 			wantStatus:     http.StatusMethodNotAllowed,
 			wantBodyString: `"message":"method not allowed"`,
 			wantAllow:      http.MethodPut,
@@ -565,7 +569,7 @@ func TestUpdate(t *testing.T) {
 			name:           "extra path segment",
 			method:         http.MethodPut,
 			path:           "/api/v1/products/1/stock-in",
-			body:           `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
+			body:           `{"sku":"SKU001","name":"Keyboard","price":100}`,
 			wantStatus:     http.StatusBadRequest,
 			wantBodyString: `"message":"invalid product ID"`,
 		},
@@ -642,6 +646,72 @@ func TestUpdate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestUpdateRejectsQuantity guards CR-15: PUT must never carry a stock value,
+// whatever it is, and a rejected request must not reach the repository.
+func TestUpdateRejectsQuantity(t *testing.T) {
+	bodies := map[string]string{
+		"positive quantity": `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":10}`,
+		"zero quantity":     `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":0}`,
+		"null quantity":     `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":null}`,
+		"negative quantity": `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":-1}`,
+		"quantity only":     `{"quantity":7}`,
+	}
+
+	for name, body := range bodies {
+		t.Run(name, func(t *testing.T) {
+			repo := &fakeProductRepository{}
+			handler := newTestHandler(repo)
+
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/products/1", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+
+			handler.Update(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+			wantBody := `{"success":false,"message":"quantity cannot be updated; use stock-in or stock-out","data":null}`
+			if got := strings.TrimSpace(rec.Body.String()); got != wantBody {
+				t.Errorf("body = %s, want %s", got, wantBody)
+			}
+			if repo.updatedProduct != nil {
+				t.Fatal("repository Update must not be called when quantity is present")
+			}
+		})
+	}
+}
+
+// TestUpdateReportsStoredQuantity checks that the PUT response carries the
+// quantity reported by the repository (the stored stock), not a client value.
+func TestUpdateReportsStoredQuantity(t *testing.T) {
+	repo := &fakeProductRepository{storedQuantity: 7}
+	handler := newTestHandler(repo)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/products/1",
+		strings.NewReader(`{"id":99,"sku":"SKU001","name":"Renamed","price":100}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.Update(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+	}
+	if repo.updatedProduct == nil {
+		t.Fatal("repository Update was not called")
+	}
+	if repo.updatedProduct.ID != 1 {
+		t.Errorf("updated product ID = %d, want 1 (path ID wins over body id)", repo.updatedProduct.ID)
+	}
+	if repo.updatedProduct.Quantity != 0 {
+		t.Errorf("handler passed quantity %d to the repository, want 0 (not an update field)", repo.updatedProduct.Quantity)
+	}
+	if !strings.Contains(rec.Body.String(), `"quantity":7`) {
+		t.Errorf("body = %s, want stored quantity 7", rec.Body.String())
 	}
 }
 

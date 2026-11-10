@@ -6,8 +6,10 @@ export function EditProductModal({ isOpen, productId, onClose, onSuccess }) {
     sku: '',
     name: '',
     price: '',
-    quantity: '0',
   })
+  // Current stock is shown read-only. It changes only through stock-in/stock-out,
+  // and the backend rejects a PUT body that contains quantity.
+  const [currentQuantity, setCurrentQuantity] = useState(null)
   const [formErrors, setFormErrors] = useState({})
   const [loadingData, setLoadingData] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -23,6 +25,7 @@ export function EditProductModal({ isOpen, productId, onClose, onSuccess }) {
     setLoadingData(true)
     setApiError(null)
     setFormErrors({})
+    setCurrentQuantity(null)
 
     getProduct(productId)
       .then((prod) => {
@@ -31,8 +34,8 @@ export function EditProductModal({ isOpen, productId, onClose, onSuccess }) {
           sku: prod.sku ?? '',
           name: prod.name ?? '',
           price: prod.price !== undefined && prod.price !== null ? String(prod.price) : '',
-          quantity: prod.quantity !== undefined && prod.quantity !== null ? String(prod.quantity) : '0',
         })
+        setCurrentQuantity(prod.quantity ?? null)
         const timer = setTimeout(() => {
           nameInputRef.current?.focus()
         }, 50)
@@ -111,18 +114,6 @@ export function EditProductModal({ isOpen, productId, onClose, onSuccess }) {
       }
     }
 
-    // Quantity: required, integer, >= 0
-    if (formData.quantity === '' || formData.quantity === null || formData.quantity === undefined) {
-      errors.quantity = 'Vui lòng nhập số lượng tồn kho'
-    } else {
-      const numQty = Number(formData.quantity)
-      if (isNaN(numQty) || !Number.isInteger(numQty)) {
-        errors.quantity = 'Số lượng phải là số nguyên'
-      } else if (numQty < 0) {
-        errors.quantity = 'Số lượng tồn kho không được nhỏ hơn 0'
-      }
-    }
-
     setFormErrors(errors)
     return Object.keys(errors).length === 0
   }
@@ -137,12 +128,12 @@ export function EditProductModal({ isOpen, productId, onClose, onSuccess }) {
 
     setSubmitting(true)
     try {
-      // Send only expected fields to satisfy decoder.DisallowUnknownFields()
+      // Send only editable fields. quantity is deliberately excluded: the API
+      // rejects it on PUT so a stale form value cannot overwrite current stock.
       const payload = {
         sku: formData.sku.trim(),
         name: formData.name.trim(),
         price: Number(formData.price),
-        quantity: Number(formData.quantity),
       }
 
       const updated = await updateProduct(productId, payload)
@@ -289,20 +280,17 @@ export function EditProductModal({ isOpen, productId, onClose, onSuccess }) {
 
                   <div className="form-group">
                     <label htmlFor="edit-quantity" className="form-label">
-                      Số lượng tồn kho <span className="form-required">*</span>
+                      Số lượng tồn kho
                     </label>
                     <input
                       id="edit-quantity"
-                      type="number"
-                      min="0"
-                      step="1"
-                      className={`form-input ${formErrors.quantity ? 'has-error' : ''}`}
-                      placeholder="0"
-                      value={formData.quantity}
-                      onChange={(e) => handleChange('quantity', e.target.value)}
-                      disabled={submitting}
+                      type="text"
+                      className="form-input"
+                      value={currentQuantity ?? '—'}
+                      readOnly
+                      disabled
                     />
-                    {formErrors.quantity && <span className="field-error">{formErrors.quantity}</span>}
+                    <span className="form-hint">Chỉ thay đổi qua Nhập kho / Xuất kho.</span>
                   </div>
                 </div>
               </>

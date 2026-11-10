@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"gostock/internal/domain"
+	"gostock/internal/dto"
 	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
 )
@@ -155,12 +156,12 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
-	var product domain.Product
+	var req dto.UpdateProductRequest
 
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 
-	if err := decoder.Decode(&product); err != nil {
+	if err := decoder.Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, "Invalid JSON request")
 		return
 	}
@@ -171,7 +172,20 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	product.ID = id
+	// Stock may change only through stock-in/stock-out. Reject the field
+	// whatever its value (including 0 and null) so a stale form value can
+	// never overwrite the current quantity.
+	if req.Quantity != nil {
+		response.Error(w, http.StatusBadRequest, "quantity cannot be updated; use stock-in or stock-out")
+		return
+	}
+
+	product := domain.Product{
+		ID:    id,
+		SKU:   req.SKU,
+		Name:  req.Name,
+		Price: req.Price,
+	}
 
 	if err := h.useCase.Update(r.Context(), &product); err != nil {
 		WriteError(w, r, err)
