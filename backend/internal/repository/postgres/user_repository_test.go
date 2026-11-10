@@ -543,3 +543,223 @@ func TestUserRepository_UpdateAndRevokeTokens(t *testing.T) {
 		}
 	})
 }
+func TestUserRepository_UpdatePasswordAndRevokeTokens(t *testing.T) {
+	revokedAt := time.Now().UTC().Truncate(time.Second)
+	const userID int64 = 5
+	const passwordHash = "$2a$12$test-hash"
+
+	t.Run("1. admin password update and token revocation commit successfully", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("failed to create sqlmock: %v", err)
+		}
+		defer db.Close()
+
+		repo := NewUserRepository(db)
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`SELECT role\s+FROM users\s+WHERE id = \$1\s+FOR UPDATE`).
+			WithArgs(userID).
+			WillReturnRows(sqlmock.NewRows([]string{"role"}).AddRow("admin"))
+
+		mock.ExpectExec(`UPDATE users\s+SET password_hash = \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$2`).
+			WithArgs(passwordHash, userID).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		mock.ExpectExec(`UPDATE refresh_tokens\s+SET revoked_at = COALESCE\(revoked_at, \$1\)\s+WHERE user_id = \$2`).
+			WithArgs(revokedAt, userID).
+			WillReturnResult(sqlmock.NewResult(0, 2))
+
+		mock.ExpectCommit()
+
+		err = repo.UpdatePasswordAndRevokeTokens(
+			context.Background(),
+			userID,
+			passwordHash,
+			revokedAt,
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unmet SQL expectations: %v", err)
+		}
+	})
+
+	t.Run("2. missing user returns ErrUserNotFound and rolls back", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("failed to create sqlmock: %v", err)
+		}
+		defer db.Close()
+
+		repo := NewUserRepository(db)
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`SELECT role\s+FROM users\s+WHERE id = \$1\s+FOR UPDATE`).
+			WithArgs(userID).
+			WillReturnError(sql.ErrNoRows)
+		mock.ExpectRollback()
+
+		err = repo.UpdatePasswordAndRevokeTokens(
+			context.Background(),
+			userID,
+			passwordHash,
+			revokedAt,
+		)
+		if !errors.Is(err, domain.ErrUserNotFound) {
+			t.Fatalf("expected ErrUserNotFound, got %v", err)
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unmet SQL expectations: %v", err)
+		}
+	})
+
+	t.Run("3. non-admin user returns ErrNotAdmin and rolls back", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("failed to create sqlmock: %v", err)
+		}
+		defer db.Close()
+
+		repo := NewUserRepository(db)
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`SELECT role\s+FROM users\s+WHERE id = \$1\s+FOR UPDATE`).
+			WithArgs(userID).
+			WillReturnRows(sqlmock.NewRows([]string{"role"}).AddRow("user"))
+		mock.ExpectRollback()
+
+		err = repo.UpdatePasswordAndRevokeTokens(
+			context.Background(),
+			userID,
+			passwordHash,
+			revokedAt,
+		)
+		if !errors.Is(err, domain.ErrNotAdmin) {
+			t.Fatalf("expected ErrNotAdmin, got %v", err)
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unmet SQL expectations: %v", err)
+		}
+	})
+
+	t.Run("4. password update failure causes rollback", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("failed to create sqlmock: %v", err)
+		}
+		defer db.Close()
+
+		repo := NewUserRepository(db)
+		updateErr := errors.New("password update failed")
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`SELECT role\s+FROM users\s+WHERE id = \$1\s+FOR UPDATE`).
+			WithArgs(userID).
+			WillReturnRows(sqlmock.NewRows([]string{"role"}).AddRow("admin"))
+
+		mock.ExpectExec(`UPDATE users\s+SET password_hash = \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$2`).
+			WithArgs(passwordHash, userID).
+			WillReturnError(updateErr)
+
+		mock.ExpectRollback()
+
+		err = repo.UpdatePasswordAndRevokeTokens(
+			context.Background(),
+			userID,
+			passwordHash,
+			revokedAt,
+		)
+		if !errors.Is(err, updateErr) {
+			t.Fatalf("expected updateErr, got %v", err)
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unmet SQL expectations: %v", err)
+		}
+	})
+
+	t.Run("5. token revocation failure rolls back password update", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("failed to create sqlmock: %v", err)
+		}
+		defer db.Close()
+
+		repo := NewUserRepository(db)
+		revokeErr := errors.New("refresh token table locked")
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`SELECT role\s+FROM users\s+WHERE id = \$1\s+FOR UPDATE`).
+			WithArgs(userID).
+			WillReturnRows(sqlmock.NewRows([]string{"role"}).AddRow("admin"))
+
+		mock.ExpectExec(`UPDATE users\s+SET password_hash = \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$2`).
+			WithArgs(passwordHash, userID).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		mock.ExpectExec(`UPDATE refresh_tokens\s+SET revoked_at = COALESCE\(revoked_at, \$1\)\s+WHERE user_id = \$2`).
+			WithArgs(revokedAt, userID).
+			WillReturnError(revokeErr)
+
+		mock.ExpectRollback()
+
+		err = repo.UpdatePasswordAndRevokeTokens(
+			context.Background(),
+			userID,
+			passwordHash,
+			revokedAt,
+		)
+		if !errors.Is(err, revokeErr) {
+			t.Fatalf("expected revokeErr, got %v", err)
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unmet SQL expectations: %v", err)
+		}
+	})
+
+	t.Run("6. commit failure is returned", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("failed to create sqlmock: %v", err)
+		}
+		defer db.Close()
+
+		repo := NewUserRepository(db)
+		commitErr := errors.New("commit failed")
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(`SELECT role\s+FROM users\s+WHERE id = \$1\s+FOR UPDATE`).
+			WithArgs(userID).
+			WillReturnRows(sqlmock.NewRows([]string{"role"}).AddRow("admin"))
+
+		mock.ExpectExec(`UPDATE users\s+SET password_hash = \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$2`).
+			WithArgs(passwordHash, userID).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		mock.ExpectExec(`UPDATE refresh_tokens\s+SET revoked_at = COALESCE\(revoked_at, \$1\)\s+WHERE user_id = \$2`).
+			WithArgs(revokedAt, userID).
+			WillReturnResult(sqlmock.NewResult(0, 2))
+
+		mock.ExpectCommit().WillReturnError(commitErr)
+
+		err = repo.UpdatePasswordAndRevokeTokens(
+			context.Background(),
+			userID,
+			passwordHash,
+			revokedAt,
+		)
+		if !errors.Is(err, commitErr) {
+			t.Fatalf("expected commitErr, got %v", err)
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unmet SQL expectations: %v", err)
+		}
+	})
+}

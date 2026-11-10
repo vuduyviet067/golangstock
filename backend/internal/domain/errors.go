@@ -16,6 +16,7 @@ var (
 var (
 	ErrUserNotFound = errors.New("user not found")
 	ErrEmailExists  = errors.New("email already exists")
+	ErrNotAdmin     = errors.New("user is not an admin")
 )
 
 // Refresh token errors.

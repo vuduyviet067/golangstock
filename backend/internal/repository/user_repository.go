@@ -19,3 +19,12 @@ type UserManagementRepository interface {
 	Update(ctx context.Context, user *domain.User) error
 	UpdateAndRevokeTokens(ctx context.Context, user *domain.User, revokedAt time.Time) error
 }
+type AdminPasswordResetRepository interface {
+	GetByEmail(ctx context.Context, email string) (*domain.User, error)
+	UpdatePasswordAndRevokeTokens(
+		ctx context.Context,
+		userID int64,
+		passwordHash string,
+		revokedAt time.Time,
+	) error
+}

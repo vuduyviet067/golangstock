@@ -251,5 +251,67 @@ func (r *UserRepository) UpdateAndRevokeTokens(
 	return tx.Commit()
 }
 
+func (r *UserRepository) UpdatePasswordAndRevokeTokens(
+	ctx context.Context,
+	userID int64,
+	passwordHash string,
+	revokedAt time.Time,
+) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var role string
+	err = tx.QueryRowContext(
+		ctx,
+		`SELECT role
+         FROM users
+         WHERE id = $1
+         FOR UPDATE`,
+		userID,
+	).Scan(&role)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.ErrUserNotFound
+	}
+	if err != nil {
+		return err
+	}
+
+	if role != "admin" {
+		return domain.ErrNotAdmin
+	}
+
+	_, err = tx.ExecContext(
+		ctx,
+		`UPDATE users
+         SET password_hash = $1,
+             updated_at = NOW()
+         WHERE id = $2`,
+		passwordHash,
+		userID,
+	)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(
+		ctx,
+		`UPDATE refresh_tokens
+         SET revoked_at = COALESCE(revoked_at, $1)
+         WHERE user_id = $2`,
+		revokedAt,
+		userID,
+	)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 var _ repository.UserRepository = (*UserRepository)(nil)
 var _ repository.UserManagementRepository = (*UserRepository)(nil)
+var _ repository.AdminPasswordResetRepository = (*UserRepository)(nil)

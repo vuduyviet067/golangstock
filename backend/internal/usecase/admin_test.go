@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"gostock/internal/domain"
 	"gostock/internal/repository"
@@ -249,5 +250,241 @@ func TestAdminUseCase_CreateAdmin_GetByEmailNilNil(t *testing.T) {
 	}
 	if admin == nil || admin.Role != "admin" || admin.PasswordHash != "" {
 		t.Errorf("returned user = %+v, want an admin without a password hash", admin)
+	}
+}
+
+type adminPasswordResetRepoFake struct {
+	getByEmail func(email string) (*domain.User, error)
+	updateErr  error
+
+	lookedUp      []string
+	updateCalls   int
+	updatedUserID int64
+	updatedHash   string
+	updatedAt     time.Time
+}
+
+func (f *adminPasswordResetRepoFake) GetByEmail(
+	_ context.Context,
+	email string,
+) (*domain.User, error) {
+	f.lookedUp = append(f.lookedUp, email)
+
+	if f.getByEmail == nil {
+		return nil, domain.ErrUserNotFound
+	}
+
+	return f.getByEmail(email)
+}
+
+func (f *adminPasswordResetRepoFake) UpdatePasswordAndRevokeTokens(
+	_ context.Context,
+	userID int64,
+	passwordHash string,
+	revokedAt time.Time,
+) error {
+	f.updateCalls++
+
+	if f.updateErr != nil {
+		return f.updateErr
+	}
+
+	f.updatedUserID = userID
+	f.updatedHash = passwordHash
+	f.updatedAt = revokedAt
+
+	return nil
+}
+
+var _ repository.AdminPasswordResetRepository = (*adminPasswordResetRepoFake)(nil)
+
+func TestAdminUseCase_ResetAdminPassword_Success(t *testing.T) {
+	users := &adminUserRepoFake{}
+	resetRepo := &adminPasswordResetRepoFake{
+		getByEmail: func(email string) (*domain.User, error) {
+			return &domain.User{
+				ID:    42,
+				Email: email,
+				Role:  "admin",
+			}, nil
+		},
+	}
+
+	uc := NewAdminUseCaseWithPasswordReset(users, resetRepo)
+
+	err := uc.ResetAdminPassword(
+		context.Background(),
+		" Admin@Example.COM ",
+		adminTestPassword,
+	)
+	if err != nil {
+		t.Fatalf("ResetAdminPassword: unexpected error: %v", err)
+	}
+
+	if !slices.Equal(resetRepo.lookedUp, []string{"admin@example.com"}) {
+		t.Errorf("lookups = %q, want [admin@example.com]", resetRepo.lookedUp)
+	}
+
+	if resetRepo.updateCalls != 1 {
+		t.Fatalf("update calls = %d, want 1", resetRepo.updateCalls)
+	}
+
+	if resetRepo.updatedUserID != 42 {
+		t.Errorf("updated user ID = %d, want 42", resetRepo.updatedUserID)
+	}
+
+	if resetRepo.updatedHash == "" || resetRepo.updatedHash == adminTestPassword {
+		t.Fatal("password must be stored as a bcrypt hash")
+	}
+
+	if err := bcrypt.CompareHashAndPassword(
+		[]byte(resetRepo.updatedHash),
+		[]byte(adminTestPassword),
+	); err != nil {
+		t.Errorf("stored hash does not match password: %v", err)
+	}
+
+	if resetRepo.updatedAt.IsZero() {
+		t.Error("revokedAt must not be zero")
+	}
+}
+
+func TestAdminUseCase_ResetAdminPassword_InvalidInput(t *testing.T) {
+	tests := []struct {
+		name     string
+		email    string
+		password string
+		wantErr  error
+	}{
+		{
+			name:     "invalid email",
+			email:    "invalid-email",
+			password: adminTestPassword,
+			wantErr:  ErrInvalidEmail,
+		},
+		{
+			name:     "password too short",
+			email:    "admin@example.com",
+			password: "1234567",
+			wantErr:  ErrInvalidPassword,
+		},
+		{
+			name:     "password too long",
+			email:    "admin@example.com",
+			password: strings.Repeat("p", 73),
+			wantErr:  ErrInvalidPassword,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &adminPasswordResetRepoFake{}
+			uc := NewAdminUseCaseWithPasswordReset(nil, repo)
+
+			err := uc.ResetAdminPassword(
+				context.Background(),
+				tc.email,
+				tc.password,
+			)
+
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("error = %v, want %v", err, tc.wantErr)
+			}
+
+			if len(repo.lookedUp) != 0 || repo.updateCalls != 0 {
+				t.Error("repository must not be called for invalid input")
+			}
+		})
+	}
+}
+
+func TestAdminUseCase_ResetAdminPassword_NotFound(t *testing.T) {
+	repo := &adminPasswordResetRepoFake{}
+	uc := NewAdminUseCaseWithPasswordReset(nil, repo)
+
+	err := uc.ResetAdminPassword(
+		context.Background(),
+		"admin@example.com",
+		adminTestPassword,
+	)
+
+	if !errors.Is(err, domain.ErrUserNotFound) {
+		t.Fatalf("error = %v, want ErrUserNotFound", err)
+	}
+
+	if repo.updateCalls != 0 {
+		t.Errorf("update calls = %d, want 0", repo.updateCalls)
+	}
+}
+
+func TestAdminUseCase_ResetAdminPassword_NotAdmin(t *testing.T) {
+	repo := &adminPasswordResetRepoFake{
+		getByEmail: func(email string) (*domain.User, error) {
+			return &domain.User{
+				ID:    7,
+				Email: email,
+				Role:  "user",
+			}, nil
+		},
+	}
+
+	uc := NewAdminUseCaseWithPasswordReset(nil, repo)
+
+	err := uc.ResetAdminPassword(
+		context.Background(),
+		"user@example.com",
+		adminTestPassword,
+	)
+
+	if !errors.Is(err, domain.ErrNotAdmin) {
+		t.Fatalf("error = %v, want ErrNotAdmin", err)
+	}
+
+	if repo.updateCalls != 0 {
+		t.Errorf("update calls = %d, want 0", repo.updateCalls)
+	}
+}
+
+func TestAdminUseCase_ResetAdminPassword_UpdateError(t *testing.T) {
+	updateErr := errors.New("database update failed")
+
+	repo := &adminPasswordResetRepoFake{
+		getByEmail: func(email string) (*domain.User, error) {
+			return &domain.User{
+				ID:   42,
+				Role: "admin",
+			}, nil
+		},
+		updateErr: updateErr,
+	}
+
+	uc := NewAdminUseCaseWithPasswordReset(nil, repo)
+
+	err := uc.ResetAdminPassword(
+		context.Background(),
+		"admin@example.com",
+		adminTestPassword,
+	)
+
+	if !errors.Is(err, updateErr) {
+		t.Fatalf("error = %v, want wrapped update error", err)
+	}
+
+	if repo.updateCalls != 1 {
+		t.Errorf("update calls = %d, want 1", repo.updateCalls)
+	}
+}
+
+func TestAdminUseCase_ResetAdminPassword_RepositoryNotConfigured(t *testing.T) {
+	uc := NewAdminUseCase(nil)
+
+	err := uc.ResetAdminPassword(
+		context.Background(),
+		"admin@example.com",
+		adminTestPassword,
+	)
+
+	if err == nil {
+		t.Fatal("expected error when reset repository is not configured")
 	}
 }
