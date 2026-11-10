@@ -23,6 +23,48 @@ func NewProductHandler(uc *usecase.ProductUseCase) *ProductHandler {
 	}
 }
 
+// productFromCreateRequest maps a create request to a new product. The request
+// ID is accepted for backward compatibility but ignored: the database assigns it.
+func productFromCreateRequest(req dto.CreateProductRequest) domain.Product {
+	return domain.Product{
+		SKU:      req.SKU,
+		Name:     req.Name,
+		Price:    req.Price,
+		Quantity: req.Quantity,
+	}
+}
+
+func toProductResponse(p domain.Product) dto.ProductResponse {
+	return dto.ProductResponse{
+		ID:       p.ID,
+		SKU:      p.SKU,
+		Name:     p.Name,
+		Price:    p.Price,
+		Quantity: p.Quantity,
+	}
+}
+
+// toProductResponsePtr keeps a nil product as a JSON null.
+func toProductResponsePtr(p *domain.Product) *dto.ProductResponse {
+	if p == nil {
+		return nil
+	}
+	resp := toProductResponse(*p)
+	return &resp
+}
+
+// toProductResponses keeps a nil slice as a JSON null and an empty slice as [].
+func toProductResponses(products []domain.Product) []dto.ProductResponse {
+	if products == nil {
+		return nil
+	}
+	items := make([]dto.ProductResponse, len(products))
+	for i, p := range products {
+		items[i] = toProductResponse(p)
+	}
+	return items
+}
+
 func (h *ProductHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -48,7 +90,7 @@ func (h *ProductHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.Success(w, http.StatusOK, "Product retrieved successfully", product)
+	response.Success(w, http.StatusOK, "Product retrieved successfully", toProductResponsePtr(product))
 }
 func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -92,7 +134,7 @@ func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.Success(w, http.StatusOK, "Products retrieved successfully", products)
+	response.Success(w, http.StatusOK, "Products retrieved successfully", toProductResponses(products))
 }
 func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -107,12 +149,12 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
-	var product domain.Product
+	var req dto.CreateProductRequest
 
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 
-	if err := decoder.Decode(&product); err != nil {
+	if err := decoder.Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, "Invalid JSON request")
 		return
 	}
@@ -123,12 +165,14 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	product := productFromCreateRequest(req)
+
 	if err := h.useCase.Create(r.Context(), &product); err != nil {
 		WriteError(w, r, err)
 		return
 	}
 
-	response.Success(w, http.StatusCreated, "Product created successfully", product)
+	response.Success(w, http.StatusCreated, "Product created successfully", toProductResponse(product))
 }
 
 func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -192,7 +236,7 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.Success(w, http.StatusOK, "Product updated successfully", product)
+	response.Success(w, http.StatusOK, "Product updated successfully", toProductResponse(product))
 }
 
 func (h *ProductHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -271,7 +315,7 @@ func (h *ProductHandler) StockIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.Success(w, http.StatusOK, "Stock added successfully", product)
+	response.Success(w, http.StatusOK, "Stock added successfully", toProductResponsePtr(product))
 }
 
 func (h *ProductHandler) StockOut(w http.ResponseWriter, r *http.Request) {
@@ -323,5 +367,5 @@ func (h *ProductHandler) StockOut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.Success(w, http.StatusOK, "Stock reduced successfully", product)
+	response.Success(w, http.StatusOK, "Stock reduced successfully", toProductResponsePtr(product))
 }
