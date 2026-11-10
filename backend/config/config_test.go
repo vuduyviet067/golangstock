@@ -39,14 +39,6 @@ var configEnvVars = []string{
 	"CORS_ALLOWED_ORIGINS",
 }
 
-// clearConfigEnv removes every config variable inherited from the developer's
-// shell or CI runner, so each test starts from a known-empty environment.
-//
-// Only variables that are actually set are touched. For each one, t.Setenv
-// records the original value and registers a cleanup that restores it after
-// the test, including when the test fails. os.Unsetenv then removes the
-// variable entirely, so it reads as absent (not merely empty) to both
-// os.Getenv and os.LookupEnv.
 func clearConfigEnv(t *testing.T) {
 	t.Helper()
 	for _, name := range configEnvVars {
@@ -60,37 +52,21 @@ func clearConfigEnv(t *testing.T) {
 	}
 }
 
-// setBaseEnv isolates the test from the ambient environment and sets the
-// only variable Load() requires.
 func setBaseEnv(t *testing.T) {
 	t.Helper()
 	clearConfigEnv(t)
 	t.Setenv("DATABASE_URL", testBaseDB)
 }
 
-// namedEnvReaders are os functions that read one variable whose name is an argument.
 var namedEnvReaders = map[string]bool{"Getenv": true, "LookupEnv": true}
 
-// bulkEnvReaders are os functions that can read arbitrary variables, so the
-// guard cannot tell which names they depend on.
 var bulkEnvReaders = map[string]bool{"Environ": true, "ExpandEnv": true}
 
-// envScan accumulates the result of scanning Go source for environment reads.
 type envScan struct {
-	// names holds variables read via os.Getenv / os.LookupEnv with a string literal.
-	names map[string]bool
-	// unverifiable holds "file:line:col: reason" for environment access the
-	// guard cannot attribute to a specific variable name.
+	names        map[string]bool
 	unverifiable []string
 }
 
-// scanEnvReads parses one Go source file and records its environment reads in
-// into. src follows parser.ParseFile: nil reads filename from disk.
-//
-// It walks the syntax tree rather than the raw text, so comments and the
-// contents of string literals are never mistaken for code. Imports of "os" are
-// resolved per file, which covers aliases (import o "os"); a dot import is
-// reported because calls through it cannot be attributed to the os package.
 func scanEnvReads(fset *token.FileSet, filename string, src any, into *envScan) error {
 	file, err := parser.ParseFile(fset, filename, src, parser.SkipObjectResolution)
 	if err != nil {
@@ -102,7 +78,6 @@ func scanEnvReads(fset *token.FileSet, filename string, src any, into *envScan) 
 			fmt.Sprintf("%s: %s", fset.Position(n.Pos()), fmt.Sprintf(format, args...)))
 	}
 
-	// Local names under which this file imports "os".
 	osNames := make(map[string]bool)
 	for _, imp := range file.Imports {
 		if path, err := strconv.Unquote(imp.Path.Value); err != nil || path != "os" {
@@ -114,7 +89,7 @@ func scanEnvReads(fset *token.FileSet, filename string, src any, into *envScan) 
 		case imp.Name.Name == ".":
 			report(imp, `dot import of "os" hides which calls read the environment; import it by name`)
 		case imp.Name.Name == "_":
-			// Blank import: declares no identifier, so nothing can be referenced.
+
 		default:
 			osNames[imp.Name.Name] = true
 		}
@@ -123,9 +98,6 @@ func scanEnvReads(fset *token.FileSet, filename string, src any, into *envScan) 
 		return nil
 	}
 
-	// Record which selectors are the function being called, so a direct call
-	// such as os.Getenv("X") can be told apart from a function value such as
-	// f := os.Getenv.
 	calls := make(map[*ast.SelectorExpr]*ast.CallExpr)
 	ast.Inspect(file, func(n ast.Node) bool {
 		if call, ok := n.(*ast.CallExpr); ok {
@@ -180,14 +152,8 @@ func scanEnvReads(fset *token.FileSet, filename string, src any, into *envScan) 
 	return nil
 }
 
-// TestConfigEnvVars_MatchesSource fails when a source file in this package
-// reads an environment variable that configEnvVars does not list (the test
-// would then leak the developer's shell into results), when the list contains
-// a name no longer read anywhere, or when environment access cannot be
-// attributed to a specific variable name.
 func TestConfigEnvVars_MatchesSource(t *testing.T) {
-	// go test runs each package's tests with the package directory as the
-	// working directory, so this finds the config package's own files.
+
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatalf("list source files: %v", err)
@@ -239,14 +205,11 @@ func TestConfigEnvVars_MatchesSource(t *testing.T) {
 	}
 }
 
-// TestScanEnvReads pins the scanner's behavior on the cases the guard must
-// handle, so a regression in the guard itself is caught.
 func TestScanEnvReads(t *testing.T) {
 	tests := []struct {
-		name  string
-		src   string
-		names []string
-		// unverifiable lists one expected substring per expected report, in order.
+		name         string
+		src          string
+		names        []string
 		unverifiable []string
 	}{
 		{
@@ -351,8 +314,7 @@ func TestScanEnvReads(t *testing.T) {
 }
 
 func TestClearConfigEnv_IsolatesAndRestoresAmbientEnvironment(t *testing.T) {
-	// Simulate a polluted shell: every variable set to a value Load() would reject
-	// or that would change its result.
+
 	for _, name := range configEnvVars {
 		t.Setenv(name, "ambient-"+name)
 	}
@@ -388,17 +350,10 @@ func TestClearConfigEnv_IsolatesAndRestoresAmbientEnvironment(t *testing.T) {
 	}
 }
 
-// testDeployedOrigins is a valid CORS allowlist for staging and production tests.
 const testDeployedOrigins = "https://app.gostock.example"
 
-// deployedTestEnvs lists the environments that require an explicit JWT_SECRET
-// and CORS_ALLOWED_ORIGINS. It is spelled out here rather than calling
-// isDeployed so that test setup does not depend on the code under test.
 var deployedTestEnvs = map[string]bool{"staging": true, "production": true, "prod": true}
 
-// setIfUnset sets name only when it is not already set. Table-driven tests use
-// it to supply settings that staging and production require, without
-// overriding a value a test case configured on purpose.
 func setIfUnset(t *testing.T, name, value string) {
 	t.Helper()
 	if _, ok := os.LookupEnv(name); !ok {

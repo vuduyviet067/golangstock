@@ -1,14 +1,9 @@
 package dto
 
-// HTTPError encapsulates an HTTP status code, a safe public client message,
-// optional field-level validation errors, and the underlying root cause error.
-//
-// It implements error and supports errors.Unwrap. Mapping errors to an
-// HTTPError and writing it to a response remain in the HTTP handler package.
 type HTTPError struct {
 	StatusCode int
 	Message    string
-	Fields     map[string]string // nil if not a field-level validation error
+	Fields     map[string]string
 	Cause      error
 }
 

@@ -2,24 +2,18 @@ package domain
 
 import "errors"
 
-// Domain errors, grouped by the entity they describe. Callers match them with
-// errors.Is; implementations may wrap them with additional context.
-
-// Product errors.
 var (
 	ErrProductNotFound   = errors.New("product not found")
 	ErrInsufficientStock = errors.New("insufficient stock")
 	ErrProductSKUExists  = errors.New("product SKU already exists")
 )
 
-// User errors.
 var (
 	ErrUserNotFound = errors.New("user not found")
 	ErrEmailExists  = errors.New("email already exists")
 	ErrNotAdmin     = errors.New("user is not an admin")
 )
 
-// Refresh token errors.
 var (
 	ErrRefreshTokenNotFound = errors.New("refresh token not found")
 	ErrRefreshTokenRevoked  = errors.New("refresh token has been revoked")

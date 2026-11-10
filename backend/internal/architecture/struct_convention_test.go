@@ -18,39 +18,6 @@ import (
 	"testing"
 )
 
-// Struct declaration convention
-//
-// Data structs, whose purpose is to carry data, are declared in
-// internal/domain (business entities and value objects) or internal/dto
-// (requests, responses, inputs, results, configuration, and other transfer
-// data).
-//
-// Behavior structs stay in the package that owns their behavior: handlers,
-// use cases, repository implementations, infrastructure services, and the
-// application. They are not moved into internal/dto.
-//
-// A named struct is classified from its syntax:
-//   - behavior struct: at least one method is declared on it in its own
-//     package (methods in _test.go files do not count) and every field is
-//     unexported, so its state is reached only through its methods. An
-//     embedded field counts as exported when its type name is exported.
-//   - data struct: any other struct with fields, including anonymous struct
-//     types such as `var req struct{ ... }`.
-//
-// Structs without fields carry no data and are ignored. Structs declared in
-// _test.go files are exempt.
-//
-// Rules:
-//  1. A data struct outside internal/domain and internal/dto is a violation
-//     unless it is listed in dataStructExceptions.
-//  2. internal/dto must not contain behavior structs. internal/domain may,
-//     because entities can own behavior.
-//
-// Limitations: the check reads syntax only. It does not see methods promoted
-// through embedded fields, and it does not report a defined type whose
-// underlying struct comes from another package (type T other.S).
-
-// modulePath is the module whose sources are checked.
 const modulePath = "gostock"
 
 const (
@@ -58,13 +25,6 @@ const (
 	dtoPackage    = "internal/dto"
 )
 
-// dataStructExceptions lists data structs deliberately kept outside
-// internal/domain and internal/dto, keyed by
-// "<module-relative package dir>.<TypeName>", with the reason for each.
-//
-// Keep it minimal: the test fails when an entry matches no struct, or when
-// the struct no longer needs an exception (it became a behavior struct or
-// moved into internal/domain or internal/dto).
 var dataStructExceptions = map[string]string{
 	"internal/platform/jwt.customClaims": "JWT wire-format claims private to the JWT adapter; it embeds " +
 		"jwt.RegisteredClaims, so moving it to internal/dto would make dto depend on the JWT library",
@@ -109,8 +69,6 @@ func TestStructConvention(t *testing.T) {
 	}
 }
 
-// checkConvention applies the struct declaration rules to pkgs, keyed by
-// module-relative package directory, and returns the violations sorted.
 func checkConvention(pkgs map[string]*packageDecls, exceptions map[string]string) []string {
 	var violations []string
 	existing := make(map[string]bool)
@@ -168,10 +126,6 @@ func checkConvention(pkgs map[string]*packageDecls, exceptions map[string]string
 	return violations
 }
 
-// loadPackages parses every production Go file in fsys and groups its struct
-// and method declarations by package directory. It skips _test.go files,
-// directories named testdata, vendor, or node_modules, directories starting
-// with "." or "_", and nested modules.
 func loadPackages(fsys fs.FS) (map[string]*packageDecls, error) {
 	fset := token.NewFileSet()
 	pkgs := make(map[string]*packageDecls)
@@ -222,9 +176,6 @@ func loadPackages(fsys fs.FS) (map[string]*packageDecls, error) {
 	return pkgs, err
 }
 
-// parseFile returns the struct types declared in one Go source file, both
-// named (including function-local types and aliases) and anonymous, and the
-// base type names of its method receivers.
 func parseFile(fset *token.FileSet, filename string, src []byte) ([]structDecl, []string, error) {
 	file, err := parser.ParseFile(fset, filename, src, parser.SkipObjectResolution)
 	if err != nil {
@@ -264,8 +215,6 @@ func parseFile(fset *token.FileSet, filename string, src []byte) ([]structDecl, 
 	return structs, receivers, nil
 }
 
-// allFieldsUnexported reports whether no field of st is exported. An embedded
-// field is exported when the name of its type is exported.
 func allFieldsUnexported(st *ast.StructType) bool {
 	for _, field := range st.Fields.List {
 		if len(field.Names) == 0 {
@@ -283,8 +232,6 @@ func allFieldsUnexported(st *ast.StructType) bool {
 	return true
 }
 
-// typeName returns the base name of a type expression such as T, *T, T[K],
-// or pkg.T, or "" when it has none.
 func typeName(expr ast.Expr) string {
 	for {
 		switch e := expr.(type) {
@@ -306,8 +253,6 @@ func typeName(expr ast.Expr) string {
 	}
 }
 
-// moduleRoot returns the directory of the nearest go.mod at or above the
-// working directory, and fails unless it declares modulePath.
 func moduleRoot(t *testing.T) string {
 	t.Helper()
 

@@ -5,8 +5,6 @@ import (
 	"time"
 )
 
-// AppConfig is the validated HTTP server configuration. It is produced by
-// config.Load, which owns reading and validating the environment.
 type AppConfig struct {
 	AppEnv                  string
 	DatabaseURL             string

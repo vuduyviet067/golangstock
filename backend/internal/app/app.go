@@ -34,9 +34,6 @@ type App struct {
 
 type dbOpener func(dsn string) (*sql.DB, error)
 
-// New initializes the composition root, wiring together repositories, use cases,
-// handlers, router, and configuring the HTTP server with timeouts.
-// If initialization fails after opening the database, the database is closed before returning.
 func New(cfg dto.AppConfig) (*App, error) {
 	return newApp(cfg, database.OpenPostgres, nil)
 }
@@ -114,13 +111,6 @@ func newApp(cfg dto.AppConfig, opener dbOpener, postDBHook func(db *sql.DB) erro
 	}, nil
 }
 
-// Run starts the HTTP server and coordinates graceful shutdown on context cancellation.
-// It guarantees that:
-// - A canceled context before startup does not start the server or leak goroutines.
-// - The server is started exactly once.
-// - Shutdown is properly coordinated with the serving goroutine.
-// - http.ErrServerClosed is treated as normal shutdown.
-// - Unexpected serving errors are returned to the caller.
 func (a *App) Run(ctx context.Context) error {
 	if a == nil || a.server == nil {
 		return errors.New("cannot run uninitialized application")
@@ -213,23 +203,10 @@ func (a *App) Run(ctx context.Context) error {
 	}
 }
 
-// Start builds the application from cfg, serves HTTP until ctx is cancelled,
-// and always releases the resources it opened. It is the single entry point a
-// process needs: callers own only the context (for example, one cancelled by
-// OS signals) and the configuration, never the App or its database.
-//
-// The returned error wraps whichever step failed. If closing the database also
-// fails, that error is joined with it, so both remain discoverable with
-// errors.Is; a cleanup failure after a clean shutdown is returned on its own.
 func Start(ctx context.Context, cfg dto.AppConfig) error {
 	return start(ctx, cfg, database.OpenPostgres, nil, "")
 }
 
-// start implements Start. ready and listenAddr are test seams; nil and ""
-// are production behavior:
-//   - ready, if non-nil, is closed once the network listener is bound.
-//   - listenAddr, if non-empty, overrides the server address so tests can
-//     bind to 127.0.0.1:0 instead of every interface.
 func start(ctx context.Context, cfg dto.AppConfig, opener dbOpener, ready chan struct{}, listenAddr string) (err error) {
 	// Do not open resources for a process that is already shutting down.
 	if ctxErr := ctx.Err(); ctxErr != nil {
@@ -258,8 +235,6 @@ func start(ctx context.Context, cfg dto.AppConfig, opener dbOpener, ready chan s
 	return nil
 }
 
-// Close closes the underlying database connection pool safely.
-// It is nil-safe, idempotent, and guarantees database resources are not closed multiple times.
 func (a *App) Close() error {
 	if a == nil {
 		return nil

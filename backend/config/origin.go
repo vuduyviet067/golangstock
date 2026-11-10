@@ -9,20 +9,15 @@ import (
 	"strings"
 )
 
-// defaultDevAllowedOrigins is the CORS allowlist used in development and test
-// when CORS_ALLOWED_ORIGINS is unset.
 var defaultDevAllowedOrigins = []string{"http://localhost:5173", "http://localhost:3000"}
 
-// origin is a validated web origin in canonical form: scheme://host[:port].
 type origin struct {
-	scheme string     // "http" or "https"
-	host   string     // lowercase hostname, dotted IPv4, or bracketed compressed IPv6
-	port   string     // empty when it is the scheme's default port
-	ip     netip.Addr // the host as an address when it is an IP literal; zero value otherwise
+	scheme string
+	host   string
+	port   string
+	ip     netip.Addr
 }
 
-// String returns the origin's canonical serialization, which is the exact form
-// browsers send in the Origin request header.
 func (o origin) String() string {
 	if o.port == "" {
 		return o.scheme + "://" + o.host
@@ -30,16 +25,6 @@ func (o origin) String() string {
 	return o.scheme + "://" + o.host + ":" + o.port
 }
 
-// parseAllowedOrigins validates a comma-separated CORS_ALLOWED_ORIGINS value
-// and returns the canonical origins, deduplicated in their original order.
-//
-// set reports whether the variable exists in the environment. When it is
-// unset, development and test get the localhost defaults, while staging and
-// production fail. When it is set, its value must yield at least one origin in
-// every environment, so an explicitly empty value is an error rather than a
-// silent fallback to the defaults. Empty segments (for example a trailing
-// comma) are skipped. Any invalid entry fails the whole value; nothing is
-// silently dropped.
 func parseAllowedOrigins(raw string, set bool, env string) ([]string, error) {
 	deployed := isDeployed(env)
 	if !set {
@@ -74,15 +59,6 @@ func parseAllowedOrigins(raw string, set bool, env string) ([]string, error) {
 	return origins, nil
 }
 
-// normalizeOrigin validates one allowlist entry and returns it in canonical
-// form: lowercase scheme and host, default port removed, IPv6 compressed, and
-// at most one trailing "/" removed. It rejects wildcards, "null", schemes other
-// than http/https, paths, queries, fragments, userinfo, invalid ports, empty
-// hosts, IPv6 zones, IPv4-mapped IPv6 addresses, and hosts that browsers would
-// parse as malformed IPv4.
-//
-// It is used only for configuration at startup. Request Origin headers are
-// never normalized; the CORS middleware compares them exactly.
 func normalizeOrigin(raw string) (origin, error) {
 	if strings.Contains(raw, "*") {
 		return origin{}, errors.New("wildcards are not supported; list each origin explicitly")
@@ -126,9 +102,6 @@ func normalizeOrigin(raw string) (origin, error) {
 	return origin{scheme: scheme, host: host, port: port, ip: ip}, nil
 }
 
-// splitHostPort separates "host[:port]" or "[ipv6][:port]". It returns an
-// empty port when none is given and an error when the port delimiter is
-// present but the port is empty.
 func splitHostPort(s string) (host, port string, err error) {
 	if strings.HasPrefix(s, "[") {
 		end := strings.IndexByte(s, ']')
@@ -164,8 +137,6 @@ func splitHostPort(s string) (host, port string, err error) {
 	return host, port, nil
 }
 
-// normalizeHost validates a host and returns its canonical form, plus the
-// parsed address when the host is an IP literal.
 func normalizeHost(h string) (string, netip.Addr, error) {
 	if h == "" {
 		return "", netip.Addr{}, errors.New("host is empty")
@@ -192,9 +163,7 @@ func normalizeHost(h string) (string, netip.Addr, error) {
 	if !isValidHostname(h) {
 		return "", netip.Addr{}, fmt.Errorf("invalid host %q", h)
 	}
-	// Browsers (WHATWG URL Standard) parse any host whose last label is numeric
-	// as IPv4. If netip rejected it, a browser would either reject it or read
-	// it as a different address (e.g. "127.1" as 127.0.0.1), so never accept it.
+
 	labels := strings.Split(h, ".")
 	if endsInNumber(labels[len(labels)-1]) {
 		return "", netip.Addr{}, fmt.Errorf("invalid IPv4 address %q", h)
@@ -202,8 +171,6 @@ func normalizeHost(h string) (string, netip.Addr, error) {
 	return h, netip.Addr{}, nil
 }
 
-// normalizePort validates a port and returns it without leading zeros, or ""
-// when it is empty or the scheme's default port.
 func normalizePort(scheme, port string) (string, error) {
 	if port == "" {
 		return "", nil
@@ -221,8 +188,6 @@ func normalizePort(scheme, port string) (string, error) {
 	return strconv.Itoa(n), nil
 }
 
-// checkDeployedOrigin applies the extra rules for staging and production:
-// https only, and no loopback, localhost, or unspecified-address hosts.
 func checkDeployedOrigin(o origin) error {
 	if o.scheme != "https" {
 		return errors.New("must use https")
@@ -238,9 +203,6 @@ func checkDeployedOrigin(o origin) error {
 	return nil
 }
 
-// isValidHostname reports whether h is a syntactically valid lowercase DNS
-// hostname: 1-253 characters, dot-separated labels of 1-63 characters from
-// [a-z0-9-] that do not start or end with "-".
 func isValidHostname(h string) bool {
 	if len(h) == 0 || len(h) > 253 {
 		return false
@@ -262,8 +224,6 @@ func isValidHostname(h string) bool {
 	return true
 }
 
-// endsInNumber reports whether a hostname label is one browsers treat as an
-// IPv4 number: all decimal digits, or "0x" followed by hex digits.
 func endsInNumber(label string) bool {
 	if isAllDigits(label) {
 		return true
