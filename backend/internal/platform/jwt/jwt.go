@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"gostock/internal/dto"
 	"gostock/internal/usecase"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -22,9 +23,6 @@ var (
 	ErrInvalidSubject   = errors.New("invalid token subject")
 	ErrInvalidRole      = errors.New("invalid user role in token")
 )
-
-// Claims is a type alias to usecase.TokenClaims for seamless compatibility.
-type Claims = usecase.TokenClaims
 
 type customClaims struct {
 	Email string `json:"email"`
@@ -87,7 +85,7 @@ func (s *JWTService) GenerateAccessToken(userID int64, email, role string) (stri
 	return signedToken, expiresAt, nil
 }
 
-func (s *JWTService) ValidateAccessToken(tokenStr string) (*usecase.TokenClaims, error) {
+func (s *JWTService) ValidateAccessToken(tokenStr string) (*dto.TokenClaims, error) {
 	if tokenStr == "" {
 		return nil, ErrInvalidToken
 	}
@@ -138,7 +136,7 @@ func (s *JWTService) ValidateAccessToken(tokenStr string) (*usecase.TokenClaims,
 		return nil, ErrInvalidRole
 	}
 
-	return &usecase.TokenClaims{
+	return &dto.TokenClaims{
 		UserID: userID,
 		Email:  claims.Email,
 		Role:   claims.Role,

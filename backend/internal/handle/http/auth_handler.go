@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gostock/internal/domain"
+	"gostock/internal/dto"
 	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
 )
@@ -27,30 +28,6 @@ func NewAuthHandler(uc *usecase.AuthUseCase, cookies *CookieManager) *AuthHandle
 	}
 }
 
-type loginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-type loginResponse struct {
-	ID        int64  `json:"id"`
-	Email     string `json:"email"`
-	Role      string `json:"role"`
-	CreatedAt string `json:"created_at"`
-}
-
-type registerRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-type authUserResponse struct {
-	ID        int64  `json:"id"`
-	Email     string `json:"email"`
-	Role      string `json:"role"`
-	CreatedAt string `json:"created_at"`
-}
-
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -64,7 +41,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
-	var req registerRequest
+	var req dto.RegisterRequest
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 
@@ -90,7 +67,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		createdAtStr = user.CreatedAt.Format(time.RFC3339)
 	}
 
-	response.Success(w, http.StatusCreated, "User registered successfully", authUserResponse{
+	response.Success(w, http.StatusCreated, "User registered successfully", dto.AuthUserResponse{
 		ID:        user.ID,
 		Email:     user.Email,
 		Role:      user.Role,
@@ -111,7 +88,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
-	var req loginRequest
+	var req dto.LoginRequest
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 
@@ -139,7 +116,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		createdAtStr = result.User.CreatedAt.Format(time.RFC3339)
 	}
 
-	response.Success(w, http.StatusOK, "Login successful", loginResponse{
+	response.Success(w, http.StatusOK, "Login successful", dto.AuthUserResponse{
 		ID:        result.User.ID,
 		Email:     result.User.Email,
 		Role:      result.User.Role,
@@ -179,7 +156,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		createdAtStr = result.User.CreatedAt.Format(time.RFC3339)
 	}
 
-	response.Success(w, http.StatusOK, "Token refreshed successfully", authUserResponse{
+	response.Success(w, http.StatusOK, "Token refreshed successfully", dto.AuthUserResponse{
 		ID:        result.User.ID,
 		Email:     result.User.Email,
 		Role:      result.User.Role,
@@ -205,7 +182,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		createdAtStr = user.CreatedAt.Format(time.RFC3339)
 	}
 
-	response.Success(w, http.StatusOK, "User profile retrieved successfully", authUserResponse{
+	response.Success(w, http.StatusOK, "User profile retrieved successfully", dto.AuthUserResponse{
 		ID:        user.ID,
 		Email:     user.Email,
 		Role:      user.Role,

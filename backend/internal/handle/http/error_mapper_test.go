@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"gostock/internal/domain"
+	"gostock/internal/dto"
 	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
 )
@@ -108,7 +109,7 @@ func TestMapError_Nil(t *testing.T) {
 }
 
 func TestMapError_AlreadyHTTPError(t *testing.T) {
-	custom := &HTTPError{
+	custom := &dto.HTTPError{
 		StatusCode: http.StatusTeapot,
 		Message:    "I'm a teapot",
 		Cause:      errors.New("tea is brewing"),
@@ -135,7 +136,7 @@ func TestWriteError_ResponseEnvelope(t *testing.T) {
 			t.Errorf("Content-Type = %q, want application/json", rec.Header().Get("Content-Type"))
 		}
 
-		var resp response.Response
+		var resp dto.APIResponse
 		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("failed to decode JSON: %v", err)
 		}
@@ -170,7 +171,7 @@ func TestWriteError_ResponseEnvelope(t *testing.T) {
 			t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 		}
 
-		var resp response.Response
+		var resp dto.APIResponse
 		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("failed to decode JSON: %v", err)
 		}
@@ -407,7 +408,7 @@ func TestWriteError_StructuredLogging(t *testing.T) {
 			t.Errorf("sensitive internal error leaked in response: %s", respBody)
 		}
 
-		var resp response.Response
+		var resp dto.APIResponse
 		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("failed to decode response JSON: %v", err)
 		}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gostock/internal/domain"
+	"gostock/internal/dto"
 	"gostock/internal/repository"
 )
 
@@ -18,11 +19,6 @@ var (
 	ErrInvalidPage     = errors.New("page must be greater than or equal to 1")
 	ErrInvalidLimit    = errors.New("limit must be between 1 and 100")
 )
-
-type UpdateUserInput struct {
-	Email *string
-	Role  *string
-}
 
 type UserUseCase struct {
 	repo repository.UserManagementRepository
@@ -78,7 +74,7 @@ func (uc *UserUseCase) List(
 func (uc *UserUseCase) Update(
 	ctx context.Context,
 	id int64,
-	input UpdateUserInput,
+	input dto.UpdateUserInput,
 ) (*domain.User, error) {
 	if id <= 0 {
 		return nil, ErrInvalidUserID

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"gostock/config"
+	"gostock/internal/dto"
 	productHTTP "gostock/internal/handle/http"
 	"gostock/internal/platform/database"
 	"gostock/internal/platform/jwt"
@@ -37,12 +37,12 @@ type dbOpener func(dsn string) (*sql.DB, error)
 // New initializes the composition root, wiring together repositories, use cases,
 // handlers, router, and configuring the HTTP server with timeouts.
 // If initialization fails after opening the database, the database is closed before returning.
-func New(cfg config.Config) (*App, error) {
+func New(cfg dto.AppConfig) (*App, error) {
 	return newApp(cfg, database.OpenPostgres, nil)
 }
 
 // newApp is an internal helper allowing dependency injection for database opener and post-db hooks.
-func newApp(cfg config.Config, opener dbOpener, postDBHook func(db *sql.DB) error) (*App, error) {
+func newApp(cfg dto.AppConfig, opener dbOpener, postDBHook func(db *sql.DB) error) (*App, error) {
 	// 1. Initialize JWT service first (fails fast before touching the database)
 	jwtService, err := jwt.NewJWTService(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience, cfg.AccessTokenTTL)
 	if err != nil {
@@ -221,20 +221,16 @@ func (a *App) Run(ctx context.Context) error {
 // The returned error wraps whichever step failed. If closing the database also
 // fails, that error is joined with it, so both remain discoverable with
 // errors.Is; a cleanup failure after a clean shutdown is returned on its own.
-func Start(ctx context.Context, cfg config.Config) error {
-	return start(ctx, cfg, database.OpenPostgres, startOptions{})
+func Start(ctx context.Context, cfg dto.AppConfig) error {
+	return start(ctx, cfg, database.OpenPostgres, nil, "")
 }
 
-// startOptions are test seams for start. The zero value is production behavior.
-type startOptions struct {
-	// ready, if non-nil, is closed once the network listener is bound.
-	ready chan struct{}
-	// listenAddr, if non-empty, overrides the server address so tests can
-	// bind to 127.0.0.1:0 instead of every interface.
-	listenAddr string
-}
-
-func start(ctx context.Context, cfg config.Config, opener dbOpener, opts startOptions) (err error) {
+// start implements Start. ready and listenAddr are test seams; nil and ""
+// are production behavior:
+//   - ready, if non-nil, is closed once the network listener is bound.
+//   - listenAddr, if non-empty, overrides the server address so tests can
+//     bind to 127.0.0.1:0 instead of every interface.
+func start(ctx context.Context, cfg dto.AppConfig, opener dbOpener, ready chan struct{}, listenAddr string) (err error) {
 	// Do not open resources for a process that is already shutting down.
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return fmt.Errorf("start application: %w", ctxErr)
@@ -251,9 +247,9 @@ func start(ctx context.Context, cfg config.Config, opener dbOpener, opts startOp
 		}
 	}()
 
-	application.readyCh = opts.ready
-	if opts.listenAddr != "" {
-		application.server.Addr = opts.listenAddr
+	application.readyCh = ready
+	if listenAddr != "" {
+		application.server.Addr = listenAddr
 	}
 
 	if runErr := application.Run(ctx); runErr != nil {

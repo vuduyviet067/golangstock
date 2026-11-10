@@ -12,8 +12,8 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 
-	"gostock/config"
 	"gostock/internal/domain"
+	"gostock/internal/dto"
 	productHTTP "gostock/internal/handle/http"
 	"gostock/internal/repository"
 	"gostock/internal/usecase"
@@ -113,8 +113,8 @@ type fakeTokenManager struct{}
 func (f *fakeTokenManager) GenerateAccessToken(userID int64, email, role string) (string, time.Time, error) {
 	return "test-token", time.Now().Add(time.Hour), nil
 }
-func (f *fakeTokenManager) ValidateAccessToken(tokenStr string) (*usecase.TokenClaims, error) {
-	return &usecase.TokenClaims{UserID: 1, Email: "test@example.com", Role: "user"}, nil
+func (f *fakeTokenManager) ValidateAccessToken(tokenStr string) (*dto.TokenClaims, error) {
+	return &dto.TokenClaims{UserID: 1, Email: "test@example.com", Role: "user"}, nil
 }
 
 func setupTestRouter() *http.ServeMux {
@@ -570,7 +570,7 @@ func TestRouter_RouteRegistration(t *testing.T) {
 }
 
 func TestApp_Lifecycle(t *testing.T) {
-	validCfg := config.Config{
+	validCfg := dto.AppConfig{
 		DatabaseURL:             "postgres://user:pass@localhost:5432/gostock?sslmode=disable",
 		HTTPPort:                "8080",
 		JWTSecret:               "this-is-a-valid-secret-with-at-least-32-bytes-long!",
@@ -823,8 +823,8 @@ func TestApp_Lifecycle(t *testing.T) {
 }
 
 // startTestConfig returns a configuration that newApp accepts.
-func startTestConfig() config.Config {
-	return config.Config{
+func startTestConfig() dto.AppConfig {
+	return dto.AppConfig{
 		DatabaseURL:             "postgres://user:pass@localhost:5432/gostock?sslmode=disable",
 		HTTPPort:                "8080",
 		JWTSecret:               "this-is-a-valid-secret-with-at-least-32-bytes-long!",
@@ -847,7 +847,7 @@ func countingOpener(db *sql.DB) (dbOpener, *int) {
 
 // runStartUntilReady runs start in a goroutine, cancels its context once the
 // listener is bound, and returns start's result.
-func runStartUntilReady(t *testing.T, cfg config.Config, opener dbOpener) error {
+func runStartUntilReady(t *testing.T, cfg dto.AppConfig, opener dbOpener) error {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -855,7 +855,7 @@ func runStartUntilReady(t *testing.T, cfg config.Config, opener dbOpener) error 
 	ready := make(chan struct{})
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- start(ctx, cfg, opener, startOptions{ready: ready, listenAddr: "127.0.0.1:0"})
+		errCh <- start(ctx, cfg, opener, ready, "127.0.0.1:0")
 	}()
 
 	select {
@@ -881,7 +881,7 @@ func TestStart_InvalidJWTConfigDoesNotOpenDatabase(t *testing.T) {
 	cfg.JWTSecret = "too-short"
 	opener, calls := countingOpener(nil)
 
-	err := start(context.Background(), cfg, opener, startOptions{})
+	err := start(context.Background(), cfg, opener, nil, "")
 
 	if err == nil {
 		t.Fatal("expected an error for an invalid JWT secret, got nil")
@@ -898,7 +898,7 @@ func TestStart_DatabaseOpenFailure(t *testing.T) {
 	dbErr := errors.New("database unreachable")
 	opener := func(string) (*sql.DB, error) { return nil, dbErr }
 
-	err := start(context.Background(), startTestConfig(), opener, startOptions{})
+	err := start(context.Background(), startTestConfig(), opener, nil, "")
 
 	if !errors.Is(err, dbErr) {
 		t.Fatalf("error = %v, want it to wrap the opener error", err)
@@ -913,7 +913,7 @@ func TestStart_CancelledContextDoesNotOpenDatabase(t *testing.T) {
 	cancel()
 	opener, calls := countingOpener(nil)
 
-	err := start(ctx, startTestConfig(), opener, startOptions{})
+	err := start(ctx, startTestConfig(), opener, nil, "")
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want it to wrap context.Canceled", err)
@@ -953,7 +953,7 @@ func TestStart_ListenFailureStillClosesDatabase(t *testing.T) {
 	cfg := startTestConfig()
 	cfg.HTTPPort = "99999" // out of range: net.Listen fails through the real config path
 
-	err = start(context.Background(), cfg, opener, startOptions{})
+	err = start(context.Background(), cfg, opener, nil, "")
 
 	if err == nil {
 		t.Fatal("expected a listen error, got nil")
@@ -984,7 +984,7 @@ func TestStart_RunAndCloseFailuresBothReported(t *testing.T) {
 		return db, nil
 	}
 
-	err = start(ctx, startTestConfig(), opener, startOptions{listenAddr: "127.0.0.1:0"})
+	err = start(ctx, startTestConfig(), opener, nil, "127.0.0.1:0")
 
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("error %v should wrap context.Canceled (the Run failure)", err)

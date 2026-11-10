@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gostock/internal/dto"
 )
 
 const (
@@ -27,24 +29,9 @@ const (
 	EnvProd        = "prod"
 )
 
-type Config struct {
-	AppEnv                  string
-	DatabaseURL             string
-	HTTPPort                string
-	JWTSecret               string
-	JWTIssuer               string
-	JWTAudience             string
-	AccessTokenTTL          time.Duration
-	RefreshTokenTTL         time.Duration
-	RefreshTokenGracePeriod time.Duration
-	CookieSecure            bool
-	CookieSameSite          http.SameSite
-	AllowedOrigins          []string
-}
-
 // IsProduction reports whether the configured environment is production or prod.
-func (c Config) IsProduction() bool {
-	return isProduction(c.AppEnv)
+func IsProduction(cfg dto.AppConfig) bool {
+	return isProduction(cfg.AppEnv)
 }
 
 func isProduction(env string) bool {
@@ -136,10 +123,10 @@ func resolveEnvironment() (string, error) {
 // Staging and production (see isDeployed) require an explicit JWT_SECRET and
 // an explicit https-only CORS_ALLOWED_ORIGINS allowlist; development and test
 // fall back to built-in defaults for both.
-func Load() (Config, error) {
+func Load() (dto.AppConfig, error) {
 	databaseURL, err := LoadDatabaseURL()
 	if err != nil {
-		return Config{}, err
+		return dto.AppConfig{}, err
 	}
 
 	port := os.Getenv("HTTP_PORT")
@@ -148,26 +135,26 @@ func Load() (Config, error) {
 	} else {
 		portNum, err := strconv.Atoi(port)
 		if err != nil || portNum < 1 || portNum > 65535 {
-			return Config{}, fmt.Errorf("HTTP_PORT must be a valid port number between 1 and 65535, got %q", port)
+			return dto.AppConfig{}, fmt.Errorf("HTTP_PORT must be a valid port number between 1 and 65535, got %q", port)
 		}
 	}
 
 	appEnv, err := resolveEnvironment()
 	if err != nil {
-		return Config{}, err
+		return dto.AppConfig{}, err
 	}
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if isDeployed(appEnv) {
 		if err := validateDeployedJWTSecret(jwtSecret, appEnv); err != nil {
-			return Config{}, err
+			return dto.AppConfig{}, err
 		}
 	} else if jwtSecret == "" {
 		jwtSecret = defaultDevSecret
 	}
 
 	if len(jwtSecret) < 32 {
-		return Config{}, errors.New("JWT_SECRET must be at least 32 bytes for HS256")
+		return dto.AppConfig{}, errors.New("JWT_SECRET must be at least 32 bytes for HS256")
 	}
 
 	jwtIssuer := os.Getenv("JWT_ISSUER")
@@ -184,7 +171,7 @@ func Load() (Config, error) {
 	if val := os.Getenv("ACCESS_TOKEN_TTL_MINUTES"); val != "" {
 		mins, err := strconv.Atoi(val)
 		if err != nil || mins <= 0 {
-			return Config{}, errors.New("ACCESS_TOKEN_TTL_MINUTES must be a positive integer")
+			return dto.AppConfig{}, errors.New("ACCESS_TOKEN_TTL_MINUTES must be a positive integer")
 		}
 		accessTokenTTL = time.Duration(mins) * time.Minute
 	}
@@ -193,7 +180,7 @@ func Load() (Config, error) {
 	if val := os.Getenv("REFRESH_TOKEN_TTL_DAYS"); val != "" {
 		days, err := strconv.Atoi(val)
 		if err != nil || days <= 0 {
-			return Config{}, errors.New("REFRESH_TOKEN_TTL_DAYS must be a positive integer")
+			return dto.AppConfig{}, errors.New("REFRESH_TOKEN_TTL_DAYS must be a positive integer")
 		}
 		refreshTokenTTL = time.Duration(days) * 24 * time.Hour
 	}
@@ -205,7 +192,7 @@ func Load() (Config, error) {
 		} else if secs, err := strconv.Atoi(val); err == nil && secs >= 0 {
 			refreshTokenGracePeriod = time.Duration(secs) * time.Second
 		} else {
-			return Config{}, errors.New("REFRESH_TOKEN_GRACE_PERIOD must be a non-negative duration or integer seconds")
+			return dto.AppConfig{}, errors.New("REFRESH_TOKEN_GRACE_PERIOD must be a non-negative duration or integer seconds")
 		}
 	}
 
@@ -213,7 +200,7 @@ func Load() (Config, error) {
 	if val := os.Getenv("COOKIE_SECURE"); val != "" {
 		parsed, err := strconv.ParseBool(strings.TrimSpace(val))
 		if err != nil {
-			return Config{}, fmt.Errorf("COOKIE_SECURE must be a boolean value (true/false), got %q: %w", val, err)
+			return dto.AppConfig{}, fmt.Errorf("COOKIE_SECURE must be a boolean value (true/false), got %q: %w", val, err)
 		}
 		cookieSecure = parsed
 	} else if isProduction(appEnv) {
@@ -221,7 +208,7 @@ func Load() (Config, error) {
 	}
 
 	if isProduction(appEnv) && !cookieSecure {
-		return Config{}, errors.New("COOKIE_SECURE cannot be false in production")
+		return dto.AppConfig{}, errors.New("COOKIE_SECURE cannot be false in production")
 	}
 
 	cookieSameSite := http.SameSiteLaxMode
@@ -235,12 +222,12 @@ func Load() (Config, error) {
 		case "none":
 			cookieSameSite = http.SameSiteNoneMode
 		default:
-			return Config{}, fmt.Errorf("COOKIE_SAMESITE must be one of 'lax', 'strict', or 'none', got %q", rawVal)
+			return dto.AppConfig{}, fmt.Errorf("COOKIE_SAMESITE must be one of 'lax', 'strict', or 'none', got %q", rawVal)
 		}
 	}
 
 	if cookieSameSite == http.SameSiteNoneMode && !cookieSecure {
-		return Config{}, errors.New("COOKIE_SAMESITE=none requires COOKIE_SECURE=true")
+		return dto.AppConfig{}, errors.New("COOKIE_SAMESITE=none requires COOKIE_SECURE=true")
 	}
 
 	// Validated last, so errors in earlier settings are reported first.
@@ -249,10 +236,10 @@ func Load() (Config, error) {
 	rawOrigins, originsSet := os.LookupEnv("CORS_ALLOWED_ORIGINS")
 	allowedOrigins, err := parseAllowedOrigins(rawOrigins, originsSet, appEnv)
 	if err != nil {
-		return Config{}, err
+		return dto.AppConfig{}, err
 	}
 
-	return Config{
+	return dto.AppConfig{
 		AppEnv:                  appEnv,
 		DatabaseURL:             databaseURL,
 		HTTPPort:                port,

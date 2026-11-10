@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"gostock/internal/dto"
 )
 
 type sampleProduct struct {
@@ -37,7 +39,7 @@ func TestSuccess(t *testing.T) {
 		t.Fatalf("expected Content-Type application/json, got %q", contentType)
 	}
 
-	var res Response
+	var res dto.APIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
 		t.Fatalf("failed to decode response JSON: %v", err)
 	}
@@ -93,7 +95,7 @@ func TestError(t *testing.T) {
 		t.Errorf("expected body %s, got %s", expected, bodyStr)
 	}
 
-	var res Response
+	var res dto.APIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
 		t.Fatalf("failed to decode response JSON: %v", err)
 	}
@@ -190,7 +192,7 @@ func TestCreated(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusCreated, rec.Code)
 	}
 
-	var res Response
+	var res dto.APIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -215,7 +217,7 @@ func TestValidationError(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
 	}
 
-	var res Response
+	var res dto.APIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -249,7 +251,7 @@ func TestPaginated(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
 
-	var res Response
+	var res dto.APIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -258,7 +260,7 @@ func TestPaginated(t *testing.T) {
 	}
 
 	dataBytes, _ := json.Marshal(res.Data)
-	var paginated PaginatedData
+	var paginated dto.PaginatedData
 	if err := json.Unmarshal(dataBytes, &paginated); err != nil {
 		t.Fatalf("failed to decode paginated data: %v", err)
 	}

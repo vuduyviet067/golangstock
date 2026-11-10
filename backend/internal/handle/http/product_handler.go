@@ -249,9 +249,7 @@ func (h *ProductHandler) StockIn(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
-	var req struct {
-		Quantity int `json:"quantity"`
-	}
+	var req dto.StockQuantityRequest
 
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
@@ -303,9 +301,7 @@ func (h *ProductHandler) StockOut(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
-	var req struct {
-		Quantity int `json:"quantity"`
-	}
+	var req dto.StockQuantityRequest
 
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()

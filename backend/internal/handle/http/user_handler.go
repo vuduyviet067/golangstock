@@ -5,23 +5,15 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"gostock/internal/domain"
+	"gostock/internal/dto"
 	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
 )
 
-type UserResponse struct {
-	ID        int64     `json:"id"`
-	Email     string    `json:"email"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-func toUserResponse(u domain.User) UserResponse {
-	return UserResponse{
+func toUserResponse(u domain.User) dto.UserResponse {
+	return dto.UserResponse{
 		ID:        u.ID,
 		Email:     u.Email,
 		Role:      u.Role,
@@ -75,7 +67,7 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := make([]UserResponse, len(users))
+	items := make([]dto.UserResponse, len(users))
 	for i, u := range users {
 		items[i] = toUserResponse(u)
 	}
@@ -111,11 +103,6 @@ func (h *UserHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	response.Success(w, http.StatusOK, "User retrieved successfully", toUserResponse(*user))
 }
 
-type updateUserInputRequest struct {
-	Email *string `json:"email"`
-	Role  *string `json:"role"`
-}
-
 func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPatch {
 		w.Header().Set("Allow", http.MethodPatch)
@@ -143,13 +130,13 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 
-	var req updateUserInputRequest
+	var req dto.UpdateUserRequest
 	if err := dec.Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	updatedUser, err := h.useCase.Update(r.Context(), id, usecase.UpdateUserInput{
+	updatedUser, err := h.useCase.Update(r.Context(), id, dto.UpdateUserInput{
 		Email: req.Email,
 		Role:  req.Role,
 	})

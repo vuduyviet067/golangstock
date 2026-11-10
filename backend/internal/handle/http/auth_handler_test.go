@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"gostock/internal/domain"
-	"gostock/internal/handle/http/response"
+	"gostock/internal/dto"
 	"gostock/internal/repository"
 	"gostock/internal/usecase"
 
@@ -129,9 +129,9 @@ func (m *mockTokenMgr) GenerateAccessToken(userID int64, email, role string) (st
 	}
 	return t, time.Now().Add(15 * time.Minute), nil
 }
-func (m *mockTokenMgr) ValidateAccessToken(tokenStr string) (*usecase.TokenClaims, error) {
+func (m *mockTokenMgr) ValidateAccessToken(tokenStr string) (*dto.TokenClaims, error) {
 	if tokenStr == "valid-token" || tokenStr == "test-jwt-token" {
-		return &usecase.TokenClaims{UserID: 1, Email: "test@example.com", Role: "user"}, nil
+		return &dto.TokenClaims{UserID: 1, Email: "test@example.com", Role: "user"}, nil
 	}
 	return nil, errors.New("invalid token")
 }
@@ -207,7 +207,7 @@ func TestAuthHandler_LoginSuccessAndCookies(t *testing.T) {
 	}
 
 	// Verify response body envelope (must NOT contain tokens)
-	var resp response.Response
+	var resp dto.APIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode JSON response: %v", err)
 	}
@@ -470,7 +470,7 @@ func TestAuthHandler_RefreshDatabaseError(t *testing.T) {
 	}
 
 	// Envelope must be unified error response without leaking internal sql/db messages
-	var resp response.Response
+	var resp dto.APIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode JSON response error: %v", err)
 	}
@@ -609,7 +609,7 @@ func TestAuthHandler_LogoutDatabaseError(t *testing.T) {
 	}
 
 	// Ensure error response envelope without internal details
-	var resp response.Response
+	var resp dto.APIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode JSON response error: %v", err)
 	}
@@ -648,7 +648,7 @@ func TestAuthHandler_Me(t *testing.T) {
 			t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 		}
 
-		var resp response.Response
+		var resp dto.APIResponse
 		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 		data := resp.Data.(map[string]any)
 		if data["email"] != "viet@example.com" {
@@ -748,7 +748,7 @@ func TestAuthHandler_Logout(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d for %s", rec.Code, http.StatusOK, tc.name)
 			}
-			var resp response.Response
+			var resp dto.APIResponse
 			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 				t.Fatalf("failed to decode response: %v", err)
 			}
@@ -778,7 +778,7 @@ func TestAuthHandler_Logout(t *testing.T) {
 		if rec.Code != http.StatusInternalServerError {
 			t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
 		}
-		var resp response.Response
+		var resp dto.APIResponse
 		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("failed to decode response: %v", err)
 		}

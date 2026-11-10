@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gostock/internal/domain"
+	"gostock/internal/dto"
 	"gostock/internal/repository"
 
 	"golang.org/x/crypto/bcrypt"
@@ -165,7 +166,7 @@ type fakeTokenManager struct {
 	genExpiry time.Time
 	genErr    error
 
-	validClaims *TokenClaims
+	validClaims *dto.TokenClaims
 	validErr    error
 }
 
@@ -184,7 +185,7 @@ func (f *fakeTokenManager) GenerateAccessToken(userID int64, email, role string)
 	return token, expiry, nil
 }
 
-func (f *fakeTokenManager) ValidateAccessToken(tokenStr string) (*TokenClaims, error) {
+func (f *fakeTokenManager) ValidateAccessToken(tokenStr string) (*dto.TokenClaims, error) {
 	if f.validErr != nil {
 		return nil, f.validErr
 	}
@@ -192,7 +193,7 @@ func (f *fakeTokenManager) ValidateAccessToken(tokenStr string) (*TokenClaims, e
 		copy := *f.validClaims
 		return &copy, nil
 	}
-	return &TokenClaims{
+	return &dto.TokenClaims{
 		UserID: 1,
 		Email:  "viet@example.com",
 		Role:   "user",
@@ -535,7 +536,7 @@ func TestAuthenticateStateless(t *testing.T) {
 			getErr: errors.New("should NOT be called!"),
 		}
 		tm := &fakeTokenManager{
-			validClaims: &TokenClaims{
+			validClaims: &dto.TokenClaims{
 				UserID: 77,
 				Email:  "principal@example.com",
 				Role:   "admin",

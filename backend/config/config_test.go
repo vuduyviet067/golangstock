@@ -585,8 +585,8 @@ func TestConfig_EnvironmentResolution(t *testing.T) {
 				if cfg.AppEnv != tc.wantAppEnv {
 					t.Errorf("AppEnv = %q, want %q", cfg.AppEnv, tc.wantAppEnv)
 				}
-				if cfg.IsProduction() != tc.wantProduction {
-					t.Errorf("IsProduction = %v, want %v", cfg.IsProduction(), tc.wantProduction)
+				if IsProduction(cfg) != tc.wantProduction {
+					t.Errorf("IsProduction = %v, want %v", IsProduction(cfg), tc.wantProduction)
 				}
 			}
 		})
@@ -1182,7 +1182,7 @@ func TestConfig_JWTSecretByEnvironment(t *testing.T) {
 	)
 
 	type outcome struct {
-		wantSecret  string // expected Config.JWTSecret on success
+		wantSecret  string // expected AppConfig.JWTSecret on success
 		errContains string // expected error substring; "{env}" is replaced by the environment label
 	}
 

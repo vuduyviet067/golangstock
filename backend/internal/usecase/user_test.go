@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gostock/internal/domain"
+	"gostock/internal/dto"
 	"gostock/internal/repository"
 )
 
@@ -197,7 +198,7 @@ func TestUserUseCase_Update(t *testing.T) {
 	t.Run("invalid user ID", func(t *testing.T) {
 		uc := NewUserUseCase(&mockUserRepo{})
 		newEmail := "new@example.com"
-		_, err := uc.Update(context.Background(), 0, UpdateUserInput{Email: &newEmail})
+		_, err := uc.Update(context.Background(), 0, dto.UpdateUserInput{Email: &newEmail})
 		if !errors.Is(err, ErrInvalidUserID) {
 			t.Errorf("expected ErrInvalidUserID, got %v", err)
 		}
@@ -205,7 +206,7 @@ func TestUserUseCase_Update(t *testing.T) {
 
 	t.Run("empty update", func(t *testing.T) {
 		uc := NewUserUseCase(&mockUserRepo{})
-		_, err := uc.Update(context.Background(), 10, UpdateUserInput{})
+		_, err := uc.Update(context.Background(), 10, dto.UpdateUserInput{})
 		if !errors.Is(err, ErrEmptyUpdate) {
 			t.Errorf("expected ErrEmptyUpdate, got %v", err)
 		}
@@ -219,7 +220,7 @@ func TestUserUseCase_Update(t *testing.T) {
 		}
 		uc := NewUserUseCase(repo)
 		role := "admin"
-		_, err := uc.Update(context.Background(), 99, UpdateUserInput{Role: &role})
+		_, err := uc.Update(context.Background(), 99, dto.UpdateUserInput{Role: &role})
 		if !errors.Is(err, domain.ErrUserNotFound) {
 			t.Fatalf("expected ErrUserNotFound, got %v", err)
 		}
@@ -235,7 +236,7 @@ func TestUserUseCase_Update(t *testing.T) {
 
 		for _, badEmail := range []string{"not-an-email", "@no-user.com", "user@", "user @example.com", "user@nodot"} {
 			email := badEmail
-			_, err := uc.Update(context.Background(), 10, UpdateUserInput{Email: &email})
+			_, err := uc.Update(context.Background(), 10, dto.UpdateUserInput{Email: &email})
 			if !errors.Is(err, ErrInvalidEmail) {
 				t.Errorf("for email %q: expected ErrInvalidEmail, got %v", badEmail, err)
 			}
@@ -252,7 +253,7 @@ func TestUserUseCase_Update(t *testing.T) {
 
 		for _, badRole := range []string{"superadmin", "moderator", "", "USER", "ADMIN "} {
 			role := badRole
-			_, err := uc.Update(context.Background(), 10, UpdateUserInput{Role: &role})
+			_, err := uc.Update(context.Background(), 10, dto.UpdateUserInput{Role: &role})
 			if !errors.Is(err, ErrInvalidUserRole) {
 				t.Errorf("for role %q: expected ErrInvalidUserRole, got %v", badRole, err)
 			}
@@ -269,7 +270,7 @@ func TestUserUseCase_Update(t *testing.T) {
 		uc := NewUserUseCase(repo)
 
 		emailInput := "   NEW.EMAIL@EXAMPLE.COM   "
-		res, err := uc.Update(context.Background(), 10, UpdateUserInput{Email: &emailInput})
+		res, err := uc.Update(context.Background(), 10, dto.UpdateUserInput{Email: &emailInput})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -300,7 +301,7 @@ func TestUserUseCase_Update(t *testing.T) {
 		uc := NewUserUseCase(repo)
 
 		roleInput := "user" // same as existing
-		_, err := uc.Update(context.Background(), 10, UpdateUserInput{Role: &roleInput})
+		_, err := uc.Update(context.Background(), 10, dto.UpdateUserInput{Role: &roleInput})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -322,7 +323,7 @@ func TestUserUseCase_Update(t *testing.T) {
 		uc := NewUserUseCase(repo)
 
 		newRole := "admin" // changing from user to admin
-		res, err := uc.Update(context.Background(), 10, UpdateUserInput{Role: &newRole})
+		res, err := uc.Update(context.Background(), 10, dto.UpdateUserInput{Role: &newRole})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -357,7 +358,7 @@ func TestUserUseCase_Update(t *testing.T) {
 		uc := NewUserUseCase(repo)
 
 		newRole := "admin"
-		_, err := uc.Update(context.Background(), 10, UpdateUserInput{Role: &newRole})
+		_, err := uc.Update(context.Background(), 10, dto.UpdateUserInput{Role: &newRole})
 		if err == nil {
 			t.Fatal("expected error when atomic operation fails, got nil")
 		}

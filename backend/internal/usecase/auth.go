@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gostock/internal/domain"
+	"gostock/internal/dto"
 	"gostock/internal/repository"
 
 	"golang.org/x/crypto/bcrypt"
@@ -34,17 +35,10 @@ const (
 	passwordMaxLen  = 72
 )
 
-// TokenClaims represents the payload decoded from a valid JWT Access Token.
-type TokenClaims struct {
-	UserID int64
-	Email  string
-	Role   string
-}
-
 // TokenManager abstracts JWT token generation and validation.
 type TokenManager interface {
 	GenerateAccessToken(userID int64, email, role string) (string, time.Time, error)
-	ValidateAccessToken(tokenStr string) (*TokenClaims, error)
+	ValidateAccessToken(tokenStr string) (*dto.TokenClaims, error)
 }
 
 type AuthUseCase struct {
@@ -54,18 +48,6 @@ type AuthUseCase struct {
 	accessTokenTTL      time.Duration
 	refreshTokenTTL     time.Duration
 	rotationGracePeriod time.Duration
-}
-
-type LoginResult struct {
-	User                  *domain.User
-	AccessToken           string
-	RefreshToken          string
-	AccessTokenExpiresAt  time.Time
-	RefreshTokenExpiresAt time.Time
-
-	// Compatibility aliases for existing handler during migration
-	Token     string
-	ExpiresAt time.Time
 }
 
 func NewAuthUseCase(
@@ -147,7 +129,7 @@ func (uc *AuthUseCase) Login(
 	ctx context.Context,
 	email string,
 	password string,
-) (*LoginResult, error) {
+) (*dto.LoginResult, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 
 	if !isValidEmail(email) || password == "" {
@@ -206,14 +188,12 @@ func (uc *AuthUseCase) Login(
 
 	user.PasswordHash = ""
 
-	return &LoginResult{
+	return &dto.LoginResult{
 		User:                  user,
 		AccessToken:           accessToken,
 		RefreshToken:          rawRefreshToken,
 		AccessTokenExpiresAt:  accessExpiry,
 		RefreshTokenExpiresAt: refreshExpiry,
-		Token:                 accessToken,
-		ExpiresAt:             accessExpiry,
 	}, nil
 }
 
@@ -255,7 +235,7 @@ func (uc *AuthUseCase) handleReplacedToken(
 func (uc *AuthUseCase) Refresh(
 	ctx context.Context,
 	rawRefreshToken string,
-) (*LoginResult, error) {
+) (*dto.LoginResult, error) {
 	if rawRefreshToken == "" {
 		return nil, ErrInvalidSession
 	}
@@ -359,14 +339,12 @@ func (uc *AuthUseCase) Refresh(
 		}
 	}
 
-	return &LoginResult{
+	return &dto.LoginResult{
 		User:                  user,
 		AccessToken:           newAccessToken,
 		RefreshToken:          newRawRefreshToken,
 		AccessTokenExpiresAt:  newAccessExpiry,
 		RefreshTokenExpiresAt: newRefreshExpiry,
-		Token:                 newAccessToken,
-		ExpiresAt:             newAccessExpiry,
 	}, nil
 }
 
