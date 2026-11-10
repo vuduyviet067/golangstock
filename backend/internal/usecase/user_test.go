@@ -344,6 +344,31 @@ func TestUserUseCase_Update(t *testing.T) {
 		}
 	})
 
+	t.Run("role surrounded by whitespace is trimmed and stored as admin", func(t *testing.T) {
+		repo := &mockUserRepo{
+			getByIDFn: func(ctx context.Context, id int64) (*domain.User, error) {
+				u := *existingUser // role is "user"
+				return &u, nil
+			},
+		}
+		uc := NewUserUseCase(repo)
+
+		paddedRole := " admin "
+		res, err := uc.Update(context.Background(), 10, dto.UpdateUserInput{Role: &paddedRole})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Role != "admin" {
+			t.Errorf("expected returned role %q, got %q", "admin", res.Role)
+		}
+		if len(repo.updateAndRevokeCalls) != 1 {
+			t.Fatalf("expected 1 call to UpdateAndRevokeTokens, got %d", len(repo.updateAndRevokeCalls))
+		}
+		if repo.updateAndRevokeCalls[0].Role != "admin" {
+			t.Errorf("expected stored role %q, got %q", "admin", repo.updateAndRevokeCalls[0].Role)
+		}
+	})
+
 	t.Run("atomic repository failure is propagated", func(t *testing.T) {
 		repoErr := errors.New("database transaction failure")
 		repo := &mockUserRepo{

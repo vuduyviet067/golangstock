@@ -13,8 +13,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const adminRole = "admin"
-
 type AdminUseCase struct {
 	users         repository.UserRepository
 	passwordReset repository.AdminPasswordResetRepository
@@ -69,7 +67,7 @@ func (uc *AdminUseCase) CreateAdmin(
 	admin := &domain.User{
 		Email:        email,
 		PasswordHash: string(passwordHash),
-		Role:         adminRole,
+		Role:         domain.RoleAdmin,
 	}
 
 	if err := uc.users.Create(ctx, admin); err != nil {
@@ -112,7 +110,7 @@ func (uc *AdminUseCase) ResetAdminPassword(
 	if user == nil {
 		return errors.New("user repository returned nil user without error")
 	}
-	if user.Role != adminRole {
+	if user.Role != domain.RoleAdmin {
 		return domain.ErrNotAdmin
 	}
 

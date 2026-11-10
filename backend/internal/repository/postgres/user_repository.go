@@ -280,7 +280,7 @@ func (r *UserRepository) UpdatePasswordAndRevokeTokens(
 		return err
 	}
 
-	if role != "admin" {
+	if role != domain.RoleAdmin {
 		return domain.ErrNotAdmin
 	}
 

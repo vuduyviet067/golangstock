@@ -30,7 +30,7 @@ var (
 )
 
 const (
-	defaultUserRole = "user"
+	defaultUserRole = domain.RoleUser
 	passwordMinLen  = 8
 	passwordMaxLen  = 72
 )

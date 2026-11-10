@@ -103,7 +103,7 @@ func (uc *UserUseCase) Update(
 
 	if input.Role != nil {
 		trimmedRole := strings.TrimSpace(*input.Role)
-		if trimmedRole != "user" && trimmedRole != "admin" {
+		if !domain.IsValidRole(trimmedRole) {
 			return nil, ErrInvalidUserRole
 		}
 		if trimmedRole != existing.Role {
