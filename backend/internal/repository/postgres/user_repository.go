@@ -30,7 +30,7 @@ func mapUserError(err error) error {
 	if errors.As(err, &pgErr) &&
 		pgErr.Code == "23505" &&
 		pgErr.ConstraintName == "users_email_unique_idx" {
-		return domain.ErrEmailExists
+		return repository.ErrEmailExists
 	}
 
 	return err
@@ -82,7 +82,7 @@ func (r *UserRepository) GetByEmail(
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, domain.ErrUserNotFound
+		return nil, repository.ErrUserNotFound
 	}
 	if err != nil {
 		return nil, err
@@ -113,7 +113,7 @@ func (r *UserRepository) GetByID(
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, domain.ErrUserNotFound
+		return nil, repository.ErrUserNotFound
 	}
 	if err != nil {
 		return nil, err
@@ -205,7 +205,7 @@ func (r *UserRepository) updateUserRow(ctx context.Context, qr queryRower, user 
 		user.ID,
 	).Scan(&user.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return domain.ErrUserNotFound
+		return repository.ErrUserNotFound
 	}
 	if err != nil {
 		return mapUserError(err)
@@ -274,14 +274,14 @@ func (r *UserRepository) UpdatePasswordAndRevokeTokens(
 	).Scan(&role)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return domain.ErrUserNotFound
+		return repository.ErrUserNotFound
 	}
 	if err != nil {
 		return err
 	}
 
-	if role != domain.RoleAdmin {
-		return domain.ErrNotAdmin
+	if role != repository.RoleAdmin {
+		return repository.ErrNotAdmin
 	}
 
 	_, err = tx.ExecContext(

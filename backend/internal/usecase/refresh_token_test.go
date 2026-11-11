@@ -1,8 +1,10 @@
-package domain
+package usecase
 
 import (
 	"testing"
 	"time"
+
+	"gostock/internal/domain"
 )
 
 func TestRefreshToken_IsWithinGracePeriod(t *testing.T) {
@@ -13,14 +15,14 @@ func TestRefreshToken_IsWithinGracePeriod(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		token       RefreshToken
+		token       domain.RefreshToken
 		gracePeriod time.Duration
 		now         time.Time
 		want        bool
 	}{
 		{
 			name: "exact lower bound: elapsed == 0",
-			token: RefreshToken{
+			token: domain.RefreshToken{
 				RevokedAt:      &revokedAt,
 				ReplacedByHash: &replacedHash,
 			},
@@ -30,7 +32,7 @@ func TestRefreshToken_IsWithinGracePeriod(t *testing.T) {
 		},
 		{
 			name: "within grace period: 0 < elapsed < gracePeriod",
-			token: RefreshToken{
+			token: domain.RefreshToken{
 				RevokedAt:      &revokedAt,
 				ReplacedByHash: &replacedHash,
 			},
@@ -40,7 +42,7 @@ func TestRefreshToken_IsWithinGracePeriod(t *testing.T) {
 		},
 		{
 			name: "exact upper bound: elapsed == gracePeriod",
-			token: RefreshToken{
+			token: domain.RefreshToken{
 				RevokedAt:      &revokedAt,
 				ReplacedByHash: &replacedHash,
 			},
@@ -50,7 +52,7 @@ func TestRefreshToken_IsWithinGracePeriod(t *testing.T) {
 		},
 		{
 			name: "negative elapsed time: now < revokedAt",
-			token: RefreshToken{
+			token: domain.RefreshToken{
 				RevokedAt:      &revokedAt,
 				ReplacedByHash: &replacedHash,
 			},
@@ -60,7 +62,7 @@ func TestRefreshToken_IsWithinGracePeriod(t *testing.T) {
 		},
 		{
 			name: "exceeded grace period: elapsed > gracePeriod",
-			token: RefreshToken{
+			token: domain.RefreshToken{
 				RevokedAt:      &revokedAt,
 				ReplacedByHash: &replacedHash,
 			},
@@ -70,7 +72,7 @@ func TestRefreshToken_IsWithinGracePeriod(t *testing.T) {
 		},
 		{
 			name: "way beyond grace period",
-			token: RefreshToken{
+			token: domain.RefreshToken{
 				RevokedAt:      &revokedAt,
 				ReplacedByHash: &replacedHash,
 			},
@@ -80,7 +82,7 @@ func TestRefreshToken_IsWithinGracePeriod(t *testing.T) {
 		},
 		{
 			name: "grace period zero",
-			token: RefreshToken{
+			token: domain.RefreshToken{
 				RevokedAt:      &revokedAt,
 				ReplacedByHash: &replacedHash,
 			},
@@ -90,7 +92,7 @@ func TestRefreshToken_IsWithinGracePeriod(t *testing.T) {
 		},
 		{
 			name: "negative grace period",
-			token: RefreshToken{
+			token: domain.RefreshToken{
 				RevokedAt:      &revokedAt,
 				ReplacedByHash: &replacedHash,
 			},
@@ -100,7 +102,7 @@ func TestRefreshToken_IsWithinGracePeriod(t *testing.T) {
 		},
 		{
 			name: "not replaced (ReplacedByHash is nil)",
-			token: RefreshToken{
+			token: domain.RefreshToken{
 				RevokedAt:      &revokedAt,
 				ReplacedByHash: nil,
 			},
@@ -110,7 +112,7 @@ func TestRefreshToken_IsWithinGracePeriod(t *testing.T) {
 		},
 		{
 			name: "not replaced (ReplacedByHash is empty string)",
-			token: RefreshToken{
+			token: domain.RefreshToken{
 				RevokedAt:      &revokedAt,
 				ReplacedByHash: func() *string { s := ""; return &s }(),
 			},
@@ -120,7 +122,7 @@ func TestRefreshToken_IsWithinGracePeriod(t *testing.T) {
 		},
 		{
 			name: "revokedAt is nil",
-			token: RefreshToken{
+			token: domain.RefreshToken{
 				RevokedAt:      nil,
 				ReplacedByHash: &replacedHash,
 			},
@@ -132,7 +134,7 @@ func TestRefreshToken_IsWithinGracePeriod(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := tc.token.IsWithinGracePeriod(tc.gracePeriod, tc.now)
+			got := IsRefreshTokenWithinGracePeriod(&tc.token, tc.gracePeriod, tc.now)
 			if got != tc.want {
 				t.Errorf("IsWithinGracePeriod() = %v, want %v", got, tc.want)
 			}
@@ -145,48 +147,48 @@ func TestRefreshToken_StatusHelpers(t *testing.T) {
 	replaced := "new-hash"
 
 	t.Run("IsRevoked", func(t *testing.T) {
-		tokenNotRevoked := RefreshToken{RevokedAt: nil}
-		if tokenNotRevoked.IsRevoked() {
+		tokenNotRevoked := domain.RefreshToken{RevokedAt: nil}
+		if IsRefreshTokenRevoked(&tokenNotRevoked) {
 			t.Errorf("expected IsRevoked() = false for nil RevokedAt")
 		}
 
-		tokenRevoked := RefreshToken{RevokedAt: &now}
-		if !tokenRevoked.IsRevoked() {
+		tokenRevoked := domain.RefreshToken{RevokedAt: &now}
+		if !IsRefreshTokenRevoked(&tokenRevoked) {
 			t.Errorf("expected IsRevoked() = true when RevokedAt is set")
 		}
 	})
 
 	t.Run("IsExpired", func(t *testing.T) {
-		tokenFuture := RefreshToken{ExpiresAt: now.Add(time.Hour)}
-		if tokenFuture.IsExpired(now) {
+		tokenFuture := domain.RefreshToken{ExpiresAt: now.Add(time.Hour)}
+		if IsRefreshTokenExpired(&tokenFuture, now) {
 			t.Errorf("expected IsExpired() = false for future expiry")
 		}
 
-		tokenPast := RefreshToken{ExpiresAt: now.Add(-time.Hour)}
-		if !tokenPast.IsExpired(now) {
+		tokenPast := domain.RefreshToken{ExpiresAt: now.Add(-time.Hour)}
+		if !IsRefreshTokenExpired(&tokenPast, now) {
 			t.Errorf("expected IsExpired() = true for past expiry")
 		}
 
-		tokenExact := RefreshToken{ExpiresAt: now}
-		if !tokenExact.IsExpired(now) {
+		tokenExact := domain.RefreshToken{ExpiresAt: now}
+		if !IsRefreshTokenExpired(&tokenExact, now) {
 			t.Errorf("expected IsExpired() = true when ExpiresAt == now")
 		}
 	})
 
 	t.Run("IsReplaced", func(t *testing.T) {
-		tokenNil := RefreshToken{ReplacedByHash: nil}
-		if tokenNil.IsReplaced() {
+		tokenNil := domain.RefreshToken{ReplacedByHash: nil}
+		if IsRefreshTokenReplaced(&tokenNil) {
 			t.Errorf("expected IsReplaced() = false for nil")
 		}
 
 		empty := ""
-		tokenEmpty := RefreshToken{ReplacedByHash: &empty}
-		if tokenEmpty.IsReplaced() {
+		tokenEmpty := domain.RefreshToken{ReplacedByHash: &empty}
+		if IsRefreshTokenReplaced(&tokenEmpty) {
 			t.Errorf("expected IsReplaced() = false for empty string")
 		}
 
-		tokenReplaced := RefreshToken{ReplacedByHash: &replaced}
-		if !tokenReplaced.IsReplaced() {
+		tokenReplaced := domain.RefreshToken{ReplacedByHash: &replaced}
+		if !IsRefreshTokenReplaced(&tokenReplaced) {
 			t.Errorf("expected IsReplaced() = true when ReplacedByHash is set")
 		}
 	})

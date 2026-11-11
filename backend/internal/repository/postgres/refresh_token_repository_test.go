@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gostock/internal/domain"
+	"gostock/internal/repository"
 	"gostock/internal/testdb"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -80,11 +81,11 @@ func TestRefreshTokenRepository_GetByTokenHashSuccess(t *testing.T) {
 		t.Errorf("token data mismatch: %+v", token)
 	}
 
-	if token.IsRevoked() {
+	if token.RevokedAt != nil {
 		t.Error("expected token to not be revoked")
 	}
 
-	if token.IsReplaced() {
+	if token.ReplacedByHash != nil && *token.ReplacedByHash != "" {
 		t.Error("expected token to not be replaced")
 	}
 
@@ -107,7 +108,7 @@ func TestRefreshTokenRepository_GetByTokenHashNotFound(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 
 	token, err := repo.GetByTokenHash(context.Background(), "missing-hash")
-	if !errors.Is(err, domain.ErrRefreshTokenNotFound) {
+	if !errors.Is(err, repository.ErrRefreshTokenNotFound) {
 		t.Fatalf("GetByTokenHash() error = %v, want ErrRefreshTokenNotFound", err)
 	}
 	if token != nil {
@@ -191,7 +192,7 @@ func TestRefreshTokenRepository_RotateNotFound(t *testing.T) {
 
 	newToken := &domain.RefreshToken{TokenHash: "new-hash"}
 	err = repo.Rotate(context.Background(), "not-found-hash", newToken)
-	if !errors.Is(err, domain.ErrRefreshTokenNotFound) {
+	if !errors.Is(err, repository.ErrRefreshTokenNotFound) {
 		t.Fatalf("Rotate() error = %v, want ErrRefreshTokenNotFound", err)
 	}
 
@@ -221,7 +222,7 @@ func TestRefreshTokenRepository_RotateReused(t *testing.T) {
 
 	newToken := &domain.RefreshToken{TokenHash: "new-hash"}
 	err = repo.Rotate(context.Background(), "reused-hash", newToken)
-	if !errors.Is(err, domain.ErrRefreshTokenReused) {
+	if !errors.Is(err, repository.ErrRefreshTokenReused) {
 		t.Fatalf("Rotate() error = %v, want ErrRefreshTokenReused", err)
 	}
 
@@ -251,7 +252,7 @@ func TestRefreshTokenRepository_RotateRevoked(t *testing.T) {
 
 	newToken := &domain.RefreshToken{TokenHash: "new-hash"}
 	err = repo.Rotate(context.Background(), "revoked-hash", newToken)
-	if !errors.Is(err, domain.ErrRefreshTokenRevoked) {
+	if !errors.Is(err, repository.ErrRefreshTokenRevoked) {
 		t.Fatalf("Rotate() error = %v, want ErrRefreshTokenRevoked", err)
 	}
 
@@ -289,7 +290,7 @@ func TestRefreshTokenRepository_RotateUserIDMismatch(t *testing.T) {
 	mock.ExpectRollback()
 
 	err = repo.Rotate(context.Background(), oldHash, newToken)
-	if !errors.Is(err, domain.ErrTokenOwnerMismatch) {
+	if !errors.Is(err, repository.ErrTokenOwnerMismatch) {
 		t.Fatalf("Rotate() error = %v, want ErrTokenOwnerMismatch", err)
 	}
 
@@ -369,7 +370,7 @@ func TestRefreshTokenRepository_RotateInvalidInput(t *testing.T) {
 
 		for _, badOldHash := range []string{"", "   ", "\t\n"} {
 			err := repo.Rotate(context.Background(), badOldHash, newToken)
-			if !errors.Is(err, domain.ErrInvalidRefreshToken) {
+			if !errors.Is(err, repository.ErrInvalidRefreshToken) {
 				t.Fatalf("Rotate(%q) error = %v, want ErrInvalidRefreshToken", badOldHash, err)
 			}
 		}
@@ -393,7 +394,7 @@ func TestRefreshTokenRepository_RotateInvalidInput(t *testing.T) {
 		}
 
 		err = repo.Rotate(context.Background(), oldHash, newToken)
-		if !errors.Is(err, domain.ErrInvalidRefreshToken) {
+		if !errors.Is(err, repository.ErrInvalidRefreshToken) {
 			t.Fatalf("Rotate(self-replacement) error = %v, want ErrInvalidRefreshToken", err)
 		}
 
@@ -411,7 +412,7 @@ func TestRefreshTokenRepository_RotateInvalidInput(t *testing.T) {
 
 		repo := NewRefreshTokenRepository(db)
 		err = repo.Rotate(context.Background(), oldHash, nil)
-		if !errors.Is(err, domain.ErrInvalidRefreshToken) {
+		if !errors.Is(err, repository.ErrInvalidRefreshToken) {
 			t.Fatalf("Rotate(nil) error = %v, want ErrInvalidRefreshToken", err)
 		}
 	})
@@ -430,7 +431,7 @@ func TestRefreshTokenRepository_RotateInvalidInput(t *testing.T) {
 			CreatedAt: now,
 		}
 		err = repo.Rotate(context.Background(), oldHash, newToken)
-		if !errors.Is(err, domain.ErrInvalidRefreshToken) {
+		if !errors.Is(err, repository.ErrInvalidRefreshToken) {
 			t.Fatalf("Rotate(empty hash) error = %v, want ErrInvalidRefreshToken", err)
 		}
 
@@ -461,7 +462,7 @@ func TestRefreshTokenRepository_RotateInvalidInput(t *testing.T) {
 			CreatedAt: now,
 		}
 		err = repo.Rotate(context.Background(), oldHash, newToken)
-		if !errors.Is(err, domain.ErrInvalidRefreshToken) {
+		if !errors.Is(err, repository.ErrInvalidRefreshToken) {
 			t.Fatalf("Rotate(zero expiry) error = %v, want ErrInvalidRefreshToken", err)
 		}
 
@@ -492,7 +493,7 @@ func TestRefreshTokenRepository_RotateInvalidInput(t *testing.T) {
 			CreatedAt: now,
 		}
 		err = repo.Rotate(context.Background(), oldHash, newToken)
-		if !errors.Is(err, domain.ErrInvalidRefreshToken) {
+		if !errors.Is(err, repository.ErrInvalidRefreshToken) {
 			t.Fatalf("Rotate(past expiry) error = %v, want ErrInvalidRefreshToken", err)
 		}
 
@@ -523,7 +524,7 @@ func TestRefreshTokenRepository_RotateExpired(t *testing.T) {
 
 	newToken := &domain.RefreshToken{TokenHash: "new-hash", CreatedAt: now}
 	err = repo.Rotate(context.Background(), "expired-hash", newToken)
-	if !errors.Is(err, domain.ErrRefreshTokenExpired) {
+	if !errors.Is(err, repository.ErrRefreshTokenExpired) {
 		t.Fatalf("Rotate() error = %v, want ErrRefreshTokenExpired", err)
 	}
 
@@ -560,7 +561,7 @@ func TestRefreshTokenRepository_RotateExpired_CallerSuppliedCreatedAtCannotBypas
 		CreatedAt: now.Add(-2 * time.Hour),
 	}
 	err = repo.Rotate(context.Background(), "expired-hash", newToken)
-	if !errors.Is(err, domain.ErrRefreshTokenExpired) {
+	if !errors.Is(err, repository.ErrRefreshTokenExpired) {
 		t.Fatalf("Rotate() error = %v, want ErrRefreshTokenExpired", err)
 	}
 
@@ -802,7 +803,7 @@ func TestRefreshTokenRepository_Rotate_ForeignKeyViolationMapped(t *testing.T) {
 	mock.ExpectRollback()
 
 	err = repo.Rotate(context.Background(), oldHash, newToken)
-	if !errors.Is(err, domain.ErrUserNotFound) {
+	if !errors.Is(err, repository.ErrUserNotFound) {
 		t.Fatalf("Rotate() error = %v, want ErrUserNotFound", err)
 	}
 
@@ -837,7 +838,7 @@ func TestRefreshTokenRepository_Create_ForeignKeyViolationMapped(t *testing.T) {
 		WillReturnError(pgErr)
 
 	err = repo.Create(context.Background(), token)
-	if !errors.Is(err, domain.ErrUserNotFound) {
+	if !errors.Is(err, repository.ErrUserNotFound) {
 		t.Fatalf("Create() error = %v, want ErrUserNotFound", err)
 	}
 
@@ -935,7 +936,7 @@ func TestRefreshTokenRepository_RevokeNotFound(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 
 	err = repo.Revoke(context.Background(), "missing-hash", now)
-	if !errors.Is(err, domain.ErrRefreshTokenNotFound) {
+	if !errors.Is(err, repository.ErrRefreshTokenNotFound) {
 		t.Fatalf("Revoke() error = %v, want ErrRefreshTokenNotFound", err)
 	}
 
@@ -1039,7 +1040,7 @@ func TestRefreshTokenRepository_IntegrationConcurrentRotation(t *testing.T) {
 	for err := range errCh {
 		if err == nil {
 			successCount++
-		} else if errors.Is(err, domain.ErrRefreshTokenReused) {
+		} else if errors.Is(err, repository.ErrRefreshTokenReused) {
 			reusedCount++
 		} else {
 			t.Errorf("unexpected error from concurrent Rotate: %v", err)

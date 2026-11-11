@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gostock/internal/domain"
+	"gostock/internal/repository"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -224,7 +225,7 @@ func TestUserRepository_Update(t *testing.T) {
 		}
 	})
 
-	t.Run("user not found returns domain.ErrUserNotFound", func(t *testing.T) {
+	t.Run("user not found returns repository.ErrUserNotFound", func(t *testing.T) {
 		db, mock, err := sqlmock.New()
 		if err != nil {
 			t.Fatalf("failed to create sqlmock: %v", err)
@@ -243,7 +244,7 @@ func TestUserRepository_Update(t *testing.T) {
 			WillReturnError(sql.ErrNoRows)
 
 		err = repo.Update(context.Background(), user)
-		if !errors.Is(err, domain.ErrUserNotFound) {
+		if !errors.Is(err, repository.ErrUserNotFound) {
 			t.Fatalf("expected ErrUserNotFound, got %v", err)
 		}
 		if err := mock.ExpectationsWereMet(); err != nil {
@@ -251,7 +252,7 @@ func TestUserRepository_Update(t *testing.T) {
 		}
 	})
 
-	t.Run("duplicate email maps to domain.ErrEmailExists", func(t *testing.T) {
+	t.Run("duplicate email maps to repository.ErrEmailExists", func(t *testing.T) {
 		db, mock, err := sqlmock.New()
 		if err != nil {
 			t.Fatalf("failed to create sqlmock: %v", err)
@@ -275,7 +276,7 @@ func TestUserRepository_Update(t *testing.T) {
 			WillReturnError(pgErr)
 
 		err = repo.Update(context.Background(), user)
-		if !errors.Is(err, domain.ErrEmailExists) {
+		if !errors.Is(err, repository.ErrEmailExists) {
 			t.Fatalf("expected ErrEmailExists, got %v", err)
 		}
 		if err := mock.ExpectationsWereMet(); err != nil {
@@ -402,7 +403,7 @@ func TestUserRepository_UpdateAndRevokeTokens(t *testing.T) {
 		mock.ExpectRollback()
 
 		err = repo.UpdateAndRevokeTokens(context.Background(), user, revokedAt)
-		if !errors.Is(err, domain.ErrUserNotFound) {
+		if !errors.Is(err, repository.ErrUserNotFound) {
 			t.Fatalf("expected ErrUserNotFound, got %v", err)
 		}
 		if err := mock.ExpectationsWereMet(); err != nil {
@@ -436,7 +437,7 @@ func TestUserRepository_UpdateAndRevokeTokens(t *testing.T) {
 		mock.ExpectRollback()
 
 		err = repo.UpdateAndRevokeTokens(context.Background(), user, revokedAt)
-		if !errors.Is(err, domain.ErrEmailExists) {
+		if !errors.Is(err, repository.ErrEmailExists) {
 			t.Fatalf("expected ErrEmailExists, got %v", err)
 		}
 		if err := mock.ExpectationsWereMet(); err != nil {
@@ -608,7 +609,7 @@ func TestUserRepository_UpdatePasswordAndRevokeTokens(t *testing.T) {
 			passwordHash,
 			revokedAt,
 		)
-		if !errors.Is(err, domain.ErrUserNotFound) {
+		if !errors.Is(err, repository.ErrUserNotFound) {
 			t.Fatalf("expected ErrUserNotFound, got %v", err)
 		}
 
@@ -638,7 +639,7 @@ func TestUserRepository_UpdatePasswordAndRevokeTokens(t *testing.T) {
 			passwordHash,
 			revokedAt,
 		)
-		if !errors.Is(err, domain.ErrNotAdmin) {
+		if !errors.Is(err, repository.ErrNotAdmin) {
 			t.Fatalf("expected ErrNotAdmin, got %v", err)
 		}
 

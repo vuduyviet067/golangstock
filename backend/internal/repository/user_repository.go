@@ -7,6 +7,11 @@ import (
 	"gostock/internal/domain"
 )
 
+// RoleAdmin is the users.role value of an admin.
+// AdminPasswordResetRepository.UpdatePasswordAndRevokeTokens checks it while
+// the user's row is locked.
+const RoleAdmin = "admin"
+
 type UserRepository interface {
 	Create(ctx context.Context, user *domain.User) error
 	GetByEmail(ctx context.Context, email string) (*domain.User, error)

@@ -29,14 +29,14 @@ func (m *mockUserRepo) Create(ctx context.Context, u *domain.User) error {
 }
 func (m *mockUserRepo) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	if m.user == nil {
-		return nil, domain.ErrUserNotFound
+		return nil, repository.ErrUserNotFound
 	}
 	copy := *m.user
 	return &copy, nil
 }
 func (m *mockUserRepo) GetByID(ctx context.Context, id int64) (*domain.User, error) {
 	if m.user == nil {
-		return nil, domain.ErrUserNotFound
+		return nil, repository.ErrUserNotFound
 	}
 	copy := *m.user
 	return &copy, nil
@@ -69,13 +69,13 @@ func (m *mockRefreshRepo) GetByTokenHash(ctx context.Context, h string) (*domain
 	if m.tokensByHash != nil {
 		t, ok := m.tokensByHash[h]
 		if !ok || t == nil {
-			return nil, domain.ErrRefreshTokenNotFound
+			return nil, repository.ErrRefreshTokenNotFound
 		}
 		copy := *t
 		return &copy, nil
 	}
 	if m.token == nil {
-		return nil, domain.ErrRefreshTokenNotFound
+		return nil, repository.ErrRefreshTokenNotFound
 	}
 	copy := *m.token
 	return &copy, nil
@@ -386,7 +386,7 @@ func TestAuthHandler_RefreshReused(t *testing.T) {
 func TestAuthHandler_RefreshInvalidRefreshTokenCredential(t *testing.T) {
 	rRepo := &mockRefreshRepo{
 		token:     &domain.RefreshToken{ID: 1, UserID: 1, ExpiresAt: time.Now().Add(time.Hour)},
-		rotateErr: domain.ErrInvalidRefreshToken,
+		rotateErr: repository.ErrInvalidRefreshToken,
 	}
 	handler := setupTestAuthHandler(&mockUserRepo{}, rRepo)
 
@@ -532,7 +532,7 @@ func TestAuthHandler_LogoutNoCookie(t *testing.T) {
 
 func TestAuthHandler_LogoutTokenNotFound(t *testing.T) {
 	rRepo := &mockRefreshRepo{
-		revokeErr: domain.ErrRefreshTokenNotFound,
+		revokeErr: repository.ErrRefreshTokenNotFound,
 	}
 	handler := setupTestAuthHandler(&mockUserRepo{}, rRepo)
 
@@ -558,7 +558,7 @@ func TestAuthHandler_LogoutTokenNotFound(t *testing.T) {
 
 func TestAuthHandler_LogoutTokenAlreadyRevoked(t *testing.T) {
 	rRepo := &mockRefreshRepo{
-		revokeErr: domain.ErrRefreshTokenRevoked,
+		revokeErr: repository.ErrRefreshTokenRevoked,
 	}
 	handler := setupTestAuthHandler(&mockUserRepo{}, rRepo)
 
@@ -724,11 +724,11 @@ func TestAuthHandler_Logout(t *testing.T) {
 		err  error
 	}{
 		{"InvalidSession", usecase.ErrInvalidSession},
-		{"RefreshTokenNotFound", domain.ErrRefreshTokenNotFound},
-		{"RefreshTokenRevoked", domain.ErrRefreshTokenRevoked},
-		{"RefreshTokenExpired", domain.ErrRefreshTokenExpired},
-		{"InvalidRefreshToken", domain.ErrInvalidRefreshToken},
-		{"RefreshTokenReused", domain.ErrRefreshTokenReused},
+		{"RefreshTokenNotFound", repository.ErrRefreshTokenNotFound},
+		{"RefreshTokenRevoked", repository.ErrRefreshTokenRevoked},
+		{"RefreshTokenExpired", repository.ErrRefreshTokenExpired},
+		{"InvalidRefreshToken", repository.ErrInvalidRefreshToken},
+		{"RefreshTokenReused", repository.ErrRefreshTokenReused},
 	}
 
 	for _, tc := range idempotentErrors {

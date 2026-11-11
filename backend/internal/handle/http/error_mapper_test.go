@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"gostock/internal/domain"
 	"gostock/internal/dto"
 	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
@@ -35,27 +34,34 @@ func TestMapError_KnownDomainAndUseCaseErrors(t *testing.T) {
 		{"ErrInvalidLimit", usecase.ErrInvalidLimit, http.StatusBadRequest, "invalid limit"},
 		{"ErrInvalidProduct", usecase.ErrInvalidProduct, http.StatusBadRequest, "Invalid product"},
 		{"ErrInvalidQuantity", usecase.ErrInvalidQuantity, http.StatusBadRequest, "quantity must be greater than 0"},
+		{"ErrInvalidChartFrom", usecase.ErrInvalidChartFrom, http.StatusBadRequest, "invalid query parameters"},
+		{"ErrInvalidChartTo", usecase.ErrInvalidChartTo, http.StatusBadRequest, "invalid query parameters"},
+		{"ErrChartRangeReversed", usecase.ErrChartRangeReversed, http.StatusBadRequest, "invalid query parameters"},
+		{"ErrChartRangeTooLong", usecase.ErrChartRangeTooLong, http.StatusBadRequest, "invalid query parameters"},
+		{"ErrInvalidGranularity", usecase.ErrInvalidGranularity, http.StatusBadRequest, "invalid query parameters"},
+		{"ErrInvalidTimezone", usecase.ErrInvalidTimezone, http.StatusBadRequest, "invalid query parameters"},
 		{"ErrInvalidEmail", usecase.ErrInvalidEmail, http.StatusBadRequest, "invalid email"},
 		{"ErrInvalidPassword", usecase.ErrInvalidPassword, http.StatusBadRequest, "invalid password"},
 
 		// 401 Unauthorized
 		{"ErrInvalidCredentials", usecase.ErrInvalidCredentials, http.StatusUnauthorized, "invalid email or password"},
 		{"ErrInvalidSession", usecase.ErrInvalidSession, http.StatusUnauthorized, "invalid or expired session"},
-		{"ErrInvalidRefreshToken", domain.ErrInvalidRefreshToken, http.StatusUnauthorized, "invalid or expired refresh token"},
-		{"ErrRefreshTokenNotFound", domain.ErrRefreshTokenNotFound, http.StatusUnauthorized, "invalid or expired refresh token"},
-		{"ErrRefreshTokenRevoked", domain.ErrRefreshTokenRevoked, http.StatusUnauthorized, "invalid or expired refresh token"},
-		{"ErrRefreshTokenExpired", domain.ErrRefreshTokenExpired, http.StatusUnauthorized, "invalid or expired refresh token"},
-		{"ErrRefreshTokenReused", domain.ErrRefreshTokenReused, http.StatusUnauthorized, "invalid or expired refresh token"},
+		{"ErrInvalidActor", usecase.ErrInvalidActor, http.StatusUnauthorized, "authentication required"},
+		{"ErrInvalidRefreshToken", usecase.ErrInvalidRefreshToken, http.StatusUnauthorized, "invalid or expired refresh token"},
+		{"ErrRefreshTokenNotFound", usecase.ErrRefreshTokenNotFound, http.StatusUnauthorized, "invalid or expired refresh token"},
+		{"ErrRefreshTokenRevoked", usecase.ErrRefreshTokenRevoked, http.StatusUnauthorized, "invalid or expired refresh token"},
+		{"ErrRefreshTokenExpired", usecase.ErrRefreshTokenExpired, http.StatusUnauthorized, "invalid or expired refresh token"},
+		{"ErrRefreshTokenReused", usecase.ErrRefreshTokenReused, http.StatusUnauthorized, "invalid or expired refresh token"},
 
 		// 404 Not Found
-		{"ErrProductNotFound", domain.ErrProductNotFound, http.StatusNotFound, "Product not found"},
-		{"ErrUserNotFound", domain.ErrUserNotFound, http.StatusNotFound, "user not found"},
+		{"ErrProductNotFound", usecase.ErrProductNotFound, http.StatusNotFound, "Product not found"},
+		{"ErrUserNotFound", usecase.ErrUserNotFound, http.StatusNotFound, "user not found"},
 
 		// 409 Conflict
-		{"ErrConcurrentRefresh", domain.ErrConcurrentRefresh, http.StatusConflict, "concurrent refresh in progress"},
-		{"ErrProductSKUExists", domain.ErrProductSKUExists, http.StatusConflict, "SKU already exists"},
-		{"ErrEmailExists", domain.ErrEmailExists, http.StatusConflict, "email already exists"},
-		{"ErrInsufficientStock", domain.ErrInsufficientStock, http.StatusConflict, "Insufficient stock"},
+		{"ErrConcurrentRefresh", usecase.ErrConcurrentRefresh, http.StatusConflict, "concurrent refresh in progress"},
+		{"ErrProductSKUExists", usecase.ErrProductSKUExists, http.StatusConflict, "SKU already exists"},
+		{"ErrEmailExists", usecase.ErrEmailExists, http.StatusConflict, "email already exists"},
+		{"ErrInsufficientStock", usecase.ErrInsufficientStock, http.StatusConflict, "Insufficient stock"},
 
 		// 500 Internal Server Error (server configuration or infrastructure errors)
 		{"ErrInvalidTokenTTL", usecase.ErrInvalidTokenTTL, http.StatusInternalServerError, "Internal server error"},
@@ -85,7 +91,7 @@ func TestMapError_KnownDomainAndUseCaseErrors(t *testing.T) {
 }
 
 func TestMapError_WrappedErrors(t *testing.T) {
-	wrapped := fmt.Errorf("service layer failed: %w", domain.ErrProductNotFound)
+	wrapped := fmt.Errorf("service layer failed: %w", usecase.ErrProductNotFound)
 	mapped := MapError(wrapped)
 
 	if mapped == nil {
@@ -97,8 +103,8 @@ func TestMapError_WrappedErrors(t *testing.T) {
 	if mapped.Message != "Product not found" {
 		t.Errorf("Message = %q, want 'Product not found'", mapped.Message)
 	}
-	if !errors.Is(mapped, domain.ErrProductNotFound) {
-		t.Error("expected errors.Is to unwrap to domain.ErrProductNotFound")
+	if !errors.Is(mapped, usecase.ErrProductNotFound) {
+		t.Error("expected errors.Is to unwrap to usecase.ErrProductNotFound")
 	}
 }
 

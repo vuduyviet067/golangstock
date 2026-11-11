@@ -29,13 +29,13 @@ type adminUserRepoFake struct {
 func (f *adminUserRepoFake) GetByEmail(_ context.Context, email string) (*domain.User, error) {
 	f.lookedUp = append(f.lookedUp, email)
 	if f.getByEmail == nil {
-		return nil, domain.ErrUserNotFound
+		return nil, repository.ErrUserNotFound
 	}
 	return f.getByEmail(email)
 }
 
 func (f *adminUserRepoFake) GetByID(context.Context, int64) (*domain.User, error) {
-	return nil, domain.ErrUserNotFound
+	return nil, repository.ErrUserNotFound
 }
 
 func (f *adminUserRepoFake) Create(_ context.Context, user *domain.User) error {
@@ -165,8 +165,8 @@ func TestAdminUseCase_CreateAdmin_ExistingEmailRejected(t *testing.T) {
 
 	admin, err := NewAdminUseCase(repo).CreateAdmin(context.Background(), "Taken@Example.com", adminTestPassword)
 
-	if !errors.Is(err, domain.ErrEmailExists) {
-		t.Fatalf("error = %v, want domain.ErrEmailExists", err)
+	if !errors.Is(err, ErrEmailExists) {
+		t.Fatalf("error = %v, want ErrEmailExists", err)
 	}
 	if admin != nil {
 		t.Errorf("returned user = %+v, want nil", *admin)
@@ -187,7 +187,7 @@ func TestAdminUseCase_CreateAdmin_GetByEmailErrorPropagated(t *testing.T) {
 	if !errors.Is(err, dbDown) {
 		t.Fatalf("error = %v, want it to wrap the repository error", err)
 	}
-	if errors.Is(err, domain.ErrEmailExists) {
+	if errors.Is(err, ErrEmailExists) {
 		t.Error("an infrastructure error must not be reported as a duplicate email")
 	}
 	if admin != nil {
@@ -216,12 +216,12 @@ func TestAdminUseCase_CreateAdmin_CreateErrorPropagated(t *testing.T) {
 // pre-check finds no user but another process inserts the same email before
 // Create; the unique constraint makes Create return ErrEmailExists.
 func TestAdminUseCase_CreateAdmin_ConcurrentDuplicate(t *testing.T) {
-	repo := &adminUserRepoFake{createErr: domain.ErrEmailExists}
+	repo := &adminUserRepoFake{createErr: repository.ErrEmailExists}
 
 	admin, err := NewAdminUseCase(repo).CreateAdmin(context.Background(), "admin@example.com", adminTestPassword)
 
-	if !errors.Is(err, domain.ErrEmailExists) {
-		t.Fatalf("error = %v, want domain.ErrEmailExists", err)
+	if !errors.Is(err, ErrEmailExists) {
+		t.Fatalf("error = %v, want ErrEmailExists", err)
 	}
 	if admin != nil {
 		t.Errorf("returned user = %+v, want nil", *admin)
@@ -271,7 +271,7 @@ func (f *adminPasswordResetRepoFake) GetByEmail(
 	f.lookedUp = append(f.lookedUp, email)
 
 	if f.getByEmail == nil {
-		return nil, domain.ErrUserNotFound
+		return nil, repository.ErrUserNotFound
 	}
 
 	return f.getByEmail(email)
@@ -408,7 +408,7 @@ func TestAdminUseCase_ResetAdminPassword_NotFound(t *testing.T) {
 		adminTestPassword,
 	)
 
-	if !errors.Is(err, domain.ErrUserNotFound) {
+	if !errors.Is(err, ErrUserNotFound) {
 		t.Fatalf("error = %v, want ErrUserNotFound", err)
 	}
 
@@ -436,7 +436,7 @@ func TestAdminUseCase_ResetAdminPassword_NotAdmin(t *testing.T) {
 		adminTestPassword,
 	)
 
-	if !errors.Is(err, domain.ErrNotAdmin) {
+	if !errors.Is(err, ErrNotAdmin) {
 		t.Fatalf("error = %v, want ErrNotAdmin", err)
 	}
 

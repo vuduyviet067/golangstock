@@ -71,6 +71,24 @@ func LoadDatabaseURL() (string, error) {
 	return databaseURL, nil
 }
 
+// LoadExpectedDatabaseName reads EXPECTED_DATABASE_NAME, the name of the
+// database the process must be connected to (checked with current_database()
+// after connecting). Unset means no check. A set value must be non-empty and
+// free of leading or trailing whitespace; it is returned unchanged.
+func LoadExpectedDatabaseName() (string, error) {
+	name, set := os.LookupEnv("EXPECTED_DATABASE_NAME")
+	if !set {
+		return "", nil
+	}
+	if strings.TrimSpace(name) == "" {
+		return "", errors.New("EXPECTED_DATABASE_NAME is set but empty; unset it or set it to the expected database name")
+	}
+	if name != strings.TrimSpace(name) {
+		return "", errors.New("EXPECTED_DATABASE_NAME cannot contain leading or trailing whitespace")
+	}
+	return name, nil
+}
+
 func resolveEnvironment() (string, error) {
 	rawAppEnv := strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
 	rawEnv := strings.ToLower(strings.TrimSpace(os.Getenv("ENV")))
@@ -94,6 +112,11 @@ func resolveEnvironment() (string, error) {
 
 func Load() (dto.AppConfig, error) {
 	databaseURL, err := LoadDatabaseURL()
+	if err != nil {
+		return dto.AppConfig{}, err
+	}
+
+	expectedDatabaseName, err := LoadExpectedDatabaseName()
 	if err != nil {
 		return dto.AppConfig{}, err
 	}
@@ -208,6 +231,7 @@ func Load() (dto.AppConfig, error) {
 	return dto.AppConfig{
 		AppEnv:                  appEnv,
 		DatabaseURL:             databaseURL,
+		ExpectedDatabaseName:    expectedDatabaseName,
 		HTTPPort:                port,
 		JWTSecret:               jwtSecret,
 		JWTIssuer:               jwtIssuer,

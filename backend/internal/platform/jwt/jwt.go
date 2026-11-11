@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"time"
 
-	"gostock/internal/domain"
 	"gostock/internal/dto"
 	"gostock/internal/usecase"
 
@@ -58,7 +57,7 @@ func (s *JWTService) GenerateAccessToken(userID int64, email, role string) (stri
 	if userID <= 0 {
 		return "", time.Time{}, ErrInvalidSubject
 	}
-	if !domain.IsValidRole(role) {
+	if !usecase.IsValidRole(role) {
 		return "", time.Time{}, ErrInvalidRole
 	}
 
@@ -133,7 +132,7 @@ func (s *JWTService) ValidateAccessToken(tokenStr string) (*dto.TokenClaims, err
 		return nil, ErrInvalidSubject
 	}
 
-	if !domain.IsValidRole(claims.Role) {
+	if !usecase.IsValidRole(claims.Role) {
 		return nil, ErrInvalidRole
 	}
 

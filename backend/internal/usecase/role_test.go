@@ -1,9 +1,7 @@
-package domain
+package usecase
 
 import "testing"
 
-// TestRoleValues pins the role values. They are a contract with the database
-// CHECK constraint, issued JWTs, and API clients, so changing them must fail.
 func TestRoleValues(t *testing.T) {
 	if RoleUser != "user" {
 		t.Errorf("RoleUser = %q, want %q", RoleUser, "user")

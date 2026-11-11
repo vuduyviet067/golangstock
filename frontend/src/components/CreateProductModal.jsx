@@ -1,12 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import { createProduct } from '../services/api'
 
+// Largest minimum_stock the API accepts (PostgreSQL INTEGER).
+const MAX_MINIMUM_STOCK = 2147483647
+
 export function CreateProductModal({ isOpen, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
     sku: '',
     name: '',
     price: '',
     quantity: '0',
+    minimumStock: '0',
   })
   const [formErrors, setFormErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
@@ -22,6 +26,7 @@ export function CreateProductModal({ isOpen, onClose, onSuccess }) {
         name: '',
         price: '',
         quantity: '0',
+        minimumStock: '0',
       })
       setFormErrors({})
       setApiError(null)
@@ -105,6 +110,20 @@ export function CreateProductModal({ isOpen, onClose, onSuccess }) {
       }
     }
 
+    // Minimum stock: required, integer, 0..MAX_MINIMUM_STOCK
+    if (String(formData.minimumStock).trim() === '') {
+      errors.minimumStock = 'Vui lòng nhập tồn kho tối thiểu (nhập 0 nếu không cần cảnh báo)'
+    } else {
+      const numMin = Number(formData.minimumStock)
+      if (isNaN(numMin) || !Number.isInteger(numMin)) {
+        errors.minimumStock = 'Tồn kho tối thiểu phải là số nguyên'
+      } else if (numMin < 0) {
+        errors.minimumStock = 'Tồn kho tối thiểu không được nhỏ hơn 0'
+      } else if (numMin > MAX_MINIMUM_STOCK) {
+        errors.minimumStock = 'Tồn kho tối thiểu quá lớn'
+      }
+    }
+
     setFormErrors(errors)
     return Object.keys(errors).length === 0
   }
@@ -125,6 +144,7 @@ export function CreateProductModal({ isOpen, onClose, onSuccess }) {
         name: formData.name.trim(),
         price: Number(formData.price),
         quantity: Number(formData.quantity),
+        minimum_stock: Number(formData.minimumStock),
       }
 
       const created = await createProduct(payload)
@@ -262,6 +282,28 @@ export function CreateProductModal({ isOpen, onClose, onSuccess }) {
                 />
                 {formErrors.quantity && <span className="field-error">{formErrors.quantity}</span>}
               </div>
+            </div>
+
+            {/* Minimum Stock Field */}
+            <div className="form-group">
+              <label htmlFor="create-minimum-stock" className="form-label">
+                Tồn kho tối thiểu <span className="form-required">*</span>
+              </label>
+              <input
+                id="create-minimum-stock"
+                type="number"
+                min="0"
+                step="1"
+                className={`form-input ${formErrors.minimumStock ? 'has-error' : ''}`}
+                placeholder="0"
+                value={formData.minimumStock}
+                onChange={(e) => handleChange('minimumStock', e.target.value)}
+                disabled={submitting}
+              />
+              {formErrors.minimumStock && <span className="field-error">{formErrors.minimumStock}</span>}
+              <span className="form-hint">
+                Sản phẩm được coi là sắp hết khi tồn kho lớn hơn 0 và không vượt quá ngưỡng này. Nhập 0 nếu không cần cảnh báo.
+              </span>
             </div>
           </div>
 

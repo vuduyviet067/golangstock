@@ -18,19 +18,15 @@ import (
 )
 
 var (
-	ErrInvalidCredentials  = errors.New("invalid email or password")
-	ErrInvalidEmail        = errors.New("invalid email")
-	ErrInvalidPassword     = errors.New("invalid password")
-	ErrInvalidSession      = errors.New("invalid session")
-	ErrRefreshTokenRevoked = domain.ErrRefreshTokenRevoked
-	ErrRefreshTokenExpired = domain.ErrRefreshTokenExpired
-	ErrRefreshTokenReused  = domain.ErrRefreshTokenReused
-	ErrConcurrentRefresh   = domain.ErrConcurrentRefresh
-	ErrInvalidTokenTTL     = errors.New("token TTLs must be positive")
+	ErrInvalidCredentials = errors.New("invalid email or password")
+	ErrInvalidEmail       = errors.New("invalid email")
+	ErrInvalidPassword    = errors.New("invalid password")
+	ErrInvalidSession     = errors.New("invalid session")
+	ErrInvalidTokenTTL    = errors.New("token TTLs must be positive")
 )
 
 const (
-	defaultUserRole = domain.RoleUser
+	defaultUserRole = RoleUser
 	passwordMinLen  = 8
 	passwordMaxLen  = 72
 )
@@ -101,7 +97,7 @@ func (uc *AuthUseCase) Register(
 	}
 
 	if err := uc.users.Create(ctx, user); err != nil {
-		return nil, err
+		return nil, fromRepository(err)
 	}
 
 	user.PasswordHash = ""
@@ -137,8 +133,8 @@ func (uc *AuthUseCase) Login(
 	}
 
 	user, err := uc.users.GetByEmail(ctx, email)
-	if err != nil {
-		if errors.Is(err, domain.ErrUserNotFound) {
+	if err = fromRepository(err); err != nil {
+		if errors.Is(err, ErrUserNotFound) {
 			return nil, ErrInvalidCredentials
 		}
 		return nil, err
@@ -183,7 +179,7 @@ func (uc *AuthUseCase) Login(
 	}
 
 	if err := uc.refreshTokens.Create(ctx, refreshTokenRecord); err != nil {
-		return nil, err
+		return nil, fromRepository(err)
 	}
 
 	user.PasswordHash = ""
@@ -206,18 +202,18 @@ func (uc *AuthUseCase) handleReplacedToken(
 		return ErrInvalidSession
 	}
 
-	if !record.IsReplaced() {
-		if record.IsRevoked() {
+	if !IsRefreshTokenReplaced(record) {
+		if IsRefreshTokenRevoked(record) {
 			return ErrRefreshTokenRevoked
 		}
-		if record.IsExpired(now) {
+		if IsRefreshTokenExpired(record, now) {
 			return ErrRefreshTokenExpired
 		}
 		return ErrInvalidSession
 	}
 
 	// Check if this replaced token is within the configured grace period
-	if record.IsWithinGracePeriod(uc.rotationGracePeriod, now) {
+	if IsRefreshTokenWithinGracePeriod(record, uc.rotationGracePeriod, now) {
 		// Concurrent refresh within grace period: do NOT revoke token family!
 		return ErrConcurrentRefresh
 	}
@@ -225,7 +221,7 @@ func (uc *AuthUseCase) handleReplacedToken(
 	// Malicious reuse detected outside grace period: revoke entire token family for this user
 	if record.UserID > 0 {
 		if err := uc.refreshTokens.RevokeAllForUser(ctx, record.UserID, now); err != nil {
-			return fmt.Errorf("failed to revoke all tokens for user %d upon token reuse: %w", record.UserID, err)
+			return fmt.Errorf("failed to revoke all tokens for user %d upon token reuse: %w", record.UserID, fromRepository(err))
 		}
 	}
 
@@ -249,8 +245,8 @@ func (uc *AuthUseCase) Refresh(
 
 	// 1. Retrieve old token record to inspect status before rotation
 	oldRecord, err := uc.refreshTokens.GetByTokenHash(ctx, encodedOldHash)
-	if err != nil {
-		if errors.Is(err, domain.ErrRefreshTokenNotFound) {
+	if err = fromRepository(err); err != nil {
+		if errors.Is(err, ErrRefreshTokenNotFound) {
 			return nil, ErrInvalidSession
 		}
 		return nil, err
@@ -262,22 +258,22 @@ func (uc *AuthUseCase) Refresh(
 	now := time.Now().UTC()
 
 	// 2. Detect token reuse early
-	if oldRecord.IsReplaced() {
+	if IsRefreshTokenReplaced(oldRecord) {
 		return nil, uc.handleReplacedToken(ctx, oldRecord, now)
 	}
 
-	if oldRecord.IsRevoked() {
+	if IsRefreshTokenRevoked(oldRecord) {
 		return nil, ErrRefreshTokenRevoked
 	}
 
-	if oldRecord.IsExpired(now) {
+	if IsRefreshTokenExpired(oldRecord, now) {
 		return nil, ErrRefreshTokenExpired
 	}
 
 	// 3. Verify user exists and fetch current role/email
 	user, err := uc.users.GetByID(ctx, oldRecord.UserID)
-	if err != nil {
-		if errors.Is(err, domain.ErrUserNotFound) {
+	if err = fromRepository(err); err != nil {
+		if errors.Is(err, ErrUserNotFound) {
 			return nil, ErrInvalidSession
 		}
 		return nil, err
@@ -311,14 +307,14 @@ func (uc *AuthUseCase) Refresh(
 	}
 
 	// 6. Execute atomic rotation in DB
-	err = uc.refreshTokens.Rotate(ctx, encodedOldHash, newRecord)
+	err = fromRepository(uc.refreshTokens.Rotate(ctx, encodedOldHash, newRecord))
 	if err != nil {
 		switch {
-		case errors.Is(err, domain.ErrRefreshTokenReused):
+		case errors.Is(err, ErrRefreshTokenReused):
 			// Fetch the latest token state from DB to evaluate grace period against when it was actually replaced
 			latestRecord, getErr := uc.refreshTokens.GetByTokenHash(ctx, encodedOldHash)
-			if getErr != nil {
-				if errors.Is(getErr, domain.ErrRefreshTokenNotFound) {
+			if getErr = fromRepository(getErr); getErr != nil {
+				if errors.Is(getErr, ErrRefreshTokenNotFound) {
 					return nil, ErrInvalidSession
 				}
 				return nil, getErr
@@ -328,11 +324,11 @@ func (uc *AuthUseCase) Refresh(
 			}
 			return nil, uc.handleReplacedToken(ctx, latestRecord, time.Now().UTC())
 
-		case errors.Is(err, domain.ErrRefreshTokenRevoked):
+		case errors.Is(err, ErrRefreshTokenRevoked):
 			return nil, ErrRefreshTokenRevoked
-		case errors.Is(err, domain.ErrRefreshTokenExpired):
+		case errors.Is(err, ErrRefreshTokenExpired):
 			return nil, ErrRefreshTokenExpired
-		case errors.Is(err, domain.ErrRefreshTokenNotFound):
+		case errors.Is(err, ErrRefreshTokenNotFound):
 			return nil, ErrInvalidSession
 		default:
 			return nil, err
@@ -359,8 +355,8 @@ func (uc *AuthUseCase) Logout(
 	tokenHash := sha256.Sum256([]byte(rawRefreshToken))
 	encodedHash := base64.RawURLEncoding.EncodeToString(tokenHash[:])
 
-	err := uc.refreshTokens.Revoke(ctx, encodedHash, time.Now())
-	if errors.Is(err, domain.ErrRefreshTokenNotFound) {
+	err := fromRepository(uc.refreshTokens.Revoke(ctx, encodedHash, time.Now()))
+	if errors.Is(err, ErrRefreshTokenNotFound) {
 		return ErrInvalidSession
 	}
 	return err

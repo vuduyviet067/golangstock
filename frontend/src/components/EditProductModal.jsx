@@ -1,15 +1,29 @@
 import { useState, useEffect, useRef } from 'react'
 import { getProduct, updateProduct } from '../services/api'
 
+// Largest minimum_stock the API accepts (PostgreSQL INTEGER).
+const MAX_MINIMUM_STOCK = 2147483647
+
+const EMPTY_FORM = {
+  sku: '',
+  name: '',
+  price: '',
+  minimumStock: '',
+}
+
 export function EditProductModal({ isOpen, productId, onClose, onSuccess }) {
-  const [formData, setFormData] = useState({
-    sku: '',
-    name: '',
-    price: '',
-  })
+  const [formData, setFormData] = useState(EMPTY_FORM)
   // Current stock is shown read-only. It changes only through stock-in/stock-out,
   // and the backend rejects a PUT body that contains quantity.
   const [currentQuantity, setCurrentQuantity] = useState(null)
+  // minimum_stock as loaded, so the update sends it only when it changed.
+  const [loadedMinimumStock, setLoadedMinimumStock] = useState(null)
+  // ID of the product whose data is in the form. The form is shown and can be
+  // saved only when it equals productId, so data of a previous product (or of
+  // a failed load) is never shown or submitted for the current one.
+  const [loadedProductId, setLoadedProductId] = useState(null)
+  // Load failure as { productId, message }, tied to the product it concerns.
+  const [loadError, setLoadError] = useState(null)
   const [formErrors, setFormErrors] = useState({})
   const [loadingData, setLoadingData] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -22,28 +36,40 @@ export function EditProductModal({ isOpen, productId, onClose, onSuccess }) {
     if (!isOpen || !productId) return
 
     let isMounted = true
+    let focusTimer = null
+
+    setFormData(EMPTY_FORM)
+    setCurrentQuantity(null)
+    setLoadedMinimumStock(null)
+    setLoadedProductId(null)
+    setLoadError(null)
     setLoadingData(true)
     setApiError(null)
     setFormErrors({})
-    setCurrentQuantity(null)
 
     getProduct(productId)
       .then((prod) => {
         if (!isMounted) return
+        const minimumStock = prod.minimum_stock ?? 0
         setFormData({
           sku: prod.sku ?? '',
           name: prod.name ?? '',
           price: prod.price !== undefined && prod.price !== null ? String(prod.price) : '',
+          minimumStock: String(minimumStock),
         })
         setCurrentQuantity(prod.quantity ?? null)
-        const timer = setTimeout(() => {
+        setLoadedMinimumStock(minimumStock)
+        setLoadedProductId(productId)
+        focusTimer = setTimeout(() => {
           nameInputRef.current?.focus()
         }, 50)
-        return () => clearTimeout(timer)
       })
       .catch((err) => {
         if (!isMounted) return
-        setApiError(err?.message || 'Không thể tải thông tin sản phẩm từ máy chủ.')
+        setLoadError({
+          productId,
+          message: err?.message || 'Không thể tải thông tin sản phẩm từ máy chủ.',
+        })
       })
       .finally(() => {
         if (isMounted) {
@@ -52,7 +78,13 @@ export function EditProductModal({ isOpen, productId, onClose, onSuccess }) {
       })
 
     return () => {
+      // Ignore the response of this request and cancel a pending focus, then
+      // forget the loaded product so reopening never shows it before the
+      // fresh data arrives.
       isMounted = false
+      clearTimeout(focusTimer)
+      setLoadedProductId(null)
+      setLoadError(null)
     }
   }, [isOpen, productId])
 
@@ -71,6 +103,13 @@ export function EditProductModal({ isOpen, productId, onClose, onSuccess }) {
   }, [isOpen, submitting, onClose])
 
   if (!isOpen) return null
+
+  // The form holds this product's data only after its own request succeeded.
+  // Until then (including the first render after switching products, before
+  // the effect runs) the modal shows the loading state.
+  const isLoaded = productId != null && loadedProductId === productId
+  const loadFailed = !isLoaded && loadError !== null && loadError.productId === productId
+  const showLoading = loadingData || (!isLoaded && !loadFailed)
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
@@ -114,12 +153,29 @@ export function EditProductModal({ isOpen, productId, onClose, onSuccess }) {
       }
     }
 
+    // Minimum stock: required, integer, 0..MAX_MINIMUM_STOCK
+    if (String(formData.minimumStock).trim() === '') {
+      errors.minimumStock = 'Vui lòng nhập tồn kho tối thiểu (nhập 0 nếu không cần cảnh báo)'
+    } else {
+      const numMin = Number(formData.minimumStock)
+      if (isNaN(numMin) || !Number.isInteger(numMin)) {
+        errors.minimumStock = 'Tồn kho tối thiểu phải là số nguyên'
+      } else if (numMin < 0) {
+        errors.minimumStock = 'Tồn kho tối thiểu không được nhỏ hơn 0'
+      } else if (numMin > MAX_MINIMUM_STOCK) {
+        errors.minimumStock = 'Tồn kho tối thiểu quá lớn'
+      }
+    }
+
     setFormErrors(errors)
     return Object.keys(errors).length === 0
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (!isLoaded || submitting) {
+      return
+    }
     setApiError(null)
 
     if (!validate()) {
@@ -135,8 +191,14 @@ export function EditProductModal({ isOpen, productId, onClose, onSuccess }) {
         name: formData.name.trim(),
         price: Number(formData.price),
       }
+      // minimum_stock is sent only when changed; when omitted the API keeps
+      // the stored value, so a concurrent change is not overwritten.
+      const minimumStock = Number(formData.minimumStock)
+      if (minimumStock !== loadedMinimumStock) {
+        payload.minimum_stock = minimumStock
+      }
 
-      const updated = await updateProduct(productId, payload)
+      const updated = await updateProduct(loadedProductId, payload)
       onSuccess(updated)
       onClose()
     } catch (err) {
@@ -187,10 +249,16 @@ export function EditProductModal({ isOpen, productId, onClose, onSuccess }) {
         <form onSubmit={handleSubmit} className="modal-form" noValidate>
           <div className="modal-body">
             {/* Loading indicator while fetching product data */}
-            {loadingData ? (
+            {showLoading ? (
               <div className="modal-loading-state">
                 <span className="spinner" aria-hidden="true"></span>
                 <span>Đang tải thông tin sản phẩm...</span>
+              </div>
+            ) : loadFailed ? (
+              <div className="alert alert-danger modal-alert" role="alert">
+                <div className="alert-content">
+                  <strong>Lỗi:</strong> {loadError.message}
+                </div>
               </div>
             ) : (
               <>
@@ -293,6 +361,28 @@ export function EditProductModal({ isOpen, productId, onClose, onSuccess }) {
                     <span className="form-hint">Chỉ thay đổi qua Nhập kho / Xuất kho.</span>
                   </div>
                 </div>
+
+                {/* Minimum Stock Field */}
+                <div className="form-group">
+                  <label htmlFor="edit-minimum-stock" className="form-label">
+                    Tồn kho tối thiểu <span className="form-required">*</span>
+                  </label>
+                  <input
+                    id="edit-minimum-stock"
+                    type="number"
+                    min="0"
+                    step="1"
+                    className={`form-input ${formErrors.minimumStock ? 'has-error' : ''}`}
+                    placeholder="0"
+                    value={formData.minimumStock}
+                    onChange={(e) => handleChange('minimumStock', e.target.value)}
+                    disabled={submitting}
+                  />
+                  {formErrors.minimumStock && <span className="field-error">{formErrors.minimumStock}</span>}
+                  <span className="form-hint">
+                    Sản phẩm được coi là sắp hết khi tồn kho lớn hơn 0 và không vượt quá ngưỡng này. Nhập 0 nếu không cần cảnh báo.
+                  </span>
+                </div>
               </>
             )}
           </div>
@@ -310,7 +400,7 @@ export function EditProductModal({ isOpen, productId, onClose, onSuccess }) {
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={submitting || loadingData}
+              disabled={submitting || !isLoaded}
             >
               {submitting ? 'Đang lưu...' : 'Lưu thay đổi'}
             </button>

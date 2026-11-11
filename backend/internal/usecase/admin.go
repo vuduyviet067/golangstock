@@ -45,13 +45,14 @@ func (uc *AdminUseCase) CreateAdmin(
 	}
 
 	existing, err := uc.users.GetByEmail(ctx, email)
+	err = fromRepository(err)
 	switch {
-	case errors.Is(err, domain.ErrUserNotFound):
+	case errors.Is(err, ErrUserNotFound):
 		// The email is available.
 	case err != nil:
 		return nil, fmt.Errorf("check existing user: %w", err)
 	case existing != nil:
-		return nil, domain.ErrEmailExists
+		return nil, ErrEmailExists
 	default:
 		// Create and the unique constraint still reject duplicates.
 	}
@@ -67,12 +68,12 @@ func (uc *AdminUseCase) CreateAdmin(
 	admin := &domain.User{
 		Email:        email,
 		PasswordHash: string(passwordHash),
-		Role:         domain.RoleAdmin,
+		Role:         RoleAdmin,
 	}
 
-	if err := uc.users.Create(ctx, admin); err != nil {
-		if errors.Is(err, domain.ErrEmailExists) {
-			return nil, domain.ErrEmailExists
+	if err := fromRepository(uc.users.Create(ctx, admin)); err != nil {
+		if errors.Is(err, ErrEmailExists) {
+			return nil, ErrEmailExists
 		}
 		return nil, fmt.Errorf("create admin: %w", err)
 	}
@@ -101,8 +102,9 @@ func (uc *AdminUseCase) ResetAdminPassword(
 	}
 
 	user, err := uc.passwordReset.GetByEmail(ctx, email)
-	if errors.Is(err, domain.ErrUserNotFound) {
-		return domain.ErrUserNotFound
+	err = fromRepository(err)
+	if errors.Is(err, ErrUserNotFound) {
+		return ErrUserNotFound
 	}
 	if err != nil {
 		return fmt.Errorf("find admin account: %w", err)
@@ -110,8 +112,8 @@ func (uc *AdminUseCase) ResetAdminPassword(
 	if user == nil {
 		return errors.New("user repository returned nil user without error")
 	}
-	if user.Role != domain.RoleAdmin {
-		return domain.ErrNotAdmin
+	if user.Role != RoleAdmin {
+		return ErrNotAdmin
 	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword(
@@ -128,7 +130,7 @@ func (uc *AdminUseCase) ResetAdminPassword(
 		string(passwordHash),
 		time.Now().UTC(),
 	); err != nil {
-		return fmt.Errorf("reset admin password: %w", err)
+		return fmt.Errorf("reset admin password: %w", fromRepository(err))
 	}
 
 	return nil

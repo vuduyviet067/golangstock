@@ -30,7 +30,7 @@ func mapRefreshTokenError(err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		if pgErr.Code == "23503" && pgErr.ConstraintName == "refresh_tokens_user_id_fkey" {
-			return domain.ErrUserNotFound
+			return repository.ErrUserNotFound
 		}
 	}
 
@@ -102,7 +102,7 @@ func (r *RefreshTokenRepository) GetByTokenHash(
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, domain.ErrRefreshTokenNotFound
+		return nil, repository.ErrRefreshTokenNotFound
 	}
 	if err != nil {
 		return nil, mapRefreshTokenError(err)
@@ -126,28 +126,28 @@ func (r *RefreshTokenRepository) Rotate(
 	if oldTokenHash == "" || oldTokenHash != strings.TrimSpace(oldTokenHash) {
 		return fmt.Errorf(
 			"%w: invalid old token hash",
-			domain.ErrInvalidRefreshToken,
+			repository.ErrInvalidRefreshToken,
 		)
 	}
 
 	if newToken == nil {
 		return fmt.Errorf(
 			"%w: new token cannot be nil",
-			domain.ErrInvalidRefreshToken,
+			repository.ErrInvalidRefreshToken,
 		)
 	}
 
 	if strings.TrimSpace(newToken.TokenHash) == "" {
 		return fmt.Errorf(
 			"%w: new token hash cannot be empty",
-			domain.ErrInvalidRefreshToken,
+			repository.ErrInvalidRefreshToken,
 		)
 	}
 
 	if newToken.TokenHash == oldTokenHash {
 		return fmt.Errorf(
 			"%w: new token hash cannot match old token hash",
-			domain.ErrInvalidRefreshToken,
+			repository.ErrInvalidRefreshToken,
 		)
 	}
 
@@ -180,7 +180,7 @@ func (r *RefreshTokenRepository) Rotate(
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return domain.ErrRefreshTokenNotFound
+		return repository.ErrRefreshTokenNotFound
 	}
 	if err != nil {
 		return mapRefreshTokenError(err)
@@ -188,33 +188,33 @@ func (r *RefreshTokenRepository) Rotate(
 
 	// Step 3: Check replacement, revocation, and expiration
 	if replacedByHash.Valid && replacedByHash.String != "" {
-		return domain.ErrRefreshTokenReused
+		return repository.ErrRefreshTokenReused
 	}
 
 	if revokedAt.Valid {
-		return domain.ErrRefreshTokenRevoked
+		return repository.ErrRefreshTokenRevoked
 	}
 
 	now := time.Now().UTC()
 
 	if !oldToken.ExpiresAt.UTC().After(now) {
-		return domain.ErrRefreshTokenExpired
+		return repository.ErrRefreshTokenExpired
 	}
 
 	// Protect user ownership
 	if newToken.UserID == 0 {
 		newToken.UserID = oldToken.UserID
 	} else if newToken.UserID != oldToken.UserID {
-		return fmt.Errorf("%w: new token user ID %d does not match old token user ID %d", domain.ErrTokenOwnerMismatch, newToken.UserID, oldToken.UserID)
+		return fmt.Errorf("%w: new token user ID %d does not match old token user ID %d", repository.ErrTokenOwnerMismatch, newToken.UserID, oldToken.UserID)
 	}
 
 	// Validate new token hash and expiry before insert
 	if strings.TrimSpace(newToken.TokenHash) == "" {
-		return fmt.Errorf("%w: new token hash cannot be empty", domain.ErrInvalidRefreshToken)
+		return fmt.Errorf("%w: new token hash cannot be empty", repository.ErrInvalidRefreshToken)
 	}
 
 	if newToken.ExpiresAt.IsZero() || !newToken.ExpiresAt.UTC().After(now) {
-		return fmt.Errorf("%w: new token expiry must be in the future", domain.ErrInvalidRefreshToken)
+		return fmt.Errorf("%w: new token expiry must be in the future", repository.ErrInvalidRefreshToken)
 	}
 
 	// Step 4: Mark old token as revoked and replaced by new token hash
@@ -296,7 +296,7 @@ func (r *RefreshTokenRepository) Revoke(
 	).Scan(&id)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return domain.ErrRefreshTokenNotFound
+		return repository.ErrRefreshTokenNotFound
 	}
 	if err != nil {
 		return mapRefreshTokenError(err)

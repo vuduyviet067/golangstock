@@ -26,13 +26,13 @@ func (m *mockUserRepoForHandler) Create(ctx context.Context, user *domain.User) 
 	return nil
 }
 func (m *mockUserRepoForHandler) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
-	return nil, domain.ErrUserNotFound
+	return nil, repository.ErrUserNotFound
 }
 func (m *mockUserRepoForHandler) GetByID(ctx context.Context, id int64) (*domain.User, error) {
 	if m.getByIDFn != nil {
 		return m.getByIDFn(ctx, id)
 	}
-	return nil, domain.ErrUserNotFound
+	return nil, repository.ErrUserNotFound
 }
 func (m *mockUserRepoForHandler) List(ctx context.Context, query string, page, limit int) ([]domain.User, int64, error) {
 	if m.listFn != nil {
@@ -235,7 +235,7 @@ func TestUserHandler_GetByID(t *testing.T) {
 	t.Run("missing user maps to 404", func(t *testing.T) {
 		repo := &mockUserRepoForHandler{
 			getByIDFn: func(ctx context.Context, id int64) (*domain.User, error) {
-				return nil, domain.ErrUserNotFound
+				return nil, repository.ErrUserNotFound
 			},
 		}
 		handler := setupUserHandler(repo)
@@ -400,7 +400,7 @@ func TestUserHandler_Update(t *testing.T) {
 				return &u, nil
 			},
 			updateFn: func(ctx context.Context, user *domain.User) error {
-				return domain.ErrEmailExists
+				return repository.ErrEmailExists
 			},
 		}
 		handler := setupUserHandler(repo)
@@ -418,7 +418,7 @@ func TestUserHandler_Update(t *testing.T) {
 	t.Run("missing user maps to 404 Not Found", func(t *testing.T) {
 		repo := &mockUserRepoForHandler{
 			getByIDFn: func(ctx context.Context, id int64) (*domain.User, error) {
-				return nil, domain.ErrUserNotFound
+				return nil, repository.ErrUserNotFound
 			},
 		}
 		handler := setupUserHandler(repo)

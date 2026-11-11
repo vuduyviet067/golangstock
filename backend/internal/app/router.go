@@ -9,14 +9,14 @@ import (
 	"gostock/internal/handle/http/response"
 )
 
-// NewRouter constructs and configures the HTTP router with all application endpoints,
-// public and protected routes, CORS, authentication and authorization middlewares.
 func NewRouter(
 	db *sql.DB,
 	productHandler *productHTTP.ProductHandler,
 	authHandler *productHTTP.AuthHandler,
 	authUseCase productHTTP.Authenticator,
 	userHandler *productHTTP.UserHandler,
+	stockMovementHandler *productHTTP.StockMovementHandler,
+	dashboardHandler *productHTTP.DashboardHandler,
 ) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", productHTTP.HealthHandler)
@@ -46,9 +46,6 @@ func NewRouter(
 	updateHandler := productHTTP.RequireAdmin(http.HandlerFunc(productHandler.Update))
 	deleteHandler := productHTTP.RequireAdmin(http.HandlerFunc(productHandler.Delete))
 
-	// Protected Product routes (/api/v1/products):
-	// - GET: Authenticated (User & Admin) -> List
-	// - POST: Admin Only -> Create
 	mux.Handle("/api/v1/products", authMiddleware(http.HandlerFunc(func(
 		w http.ResponseWriter,
 		r *http.Request,
@@ -64,17 +61,17 @@ func NewRouter(
 		}
 	})))
 
-	// Protected Product routes (/api/v1/products/):
-	// - POST /stock-in: Authenticated (User & Admin) -> StockIn
-	// - POST /stock-out: Authenticated (User & Admin) -> StockOut
-	// - GET /{id}: Authenticated (User & Admin) -> GetByID
-	// - PUT /{id}: Admin Only -> Update
-	// - DELETE /{id}: Admin Only -> Delete
 	mux.Handle("/api/v1/products/", authMiddleware(http.HandlerFunc(func(
 		w http.ResponseWriter,
 		r *http.Request,
 	) {
 		path := r.URL.Path
+
+		// GET /api/v1/products/{id}/movements: User & Admin.
+		if stockMovementHandler != nil && strings.HasSuffix(path, "/movements") {
+			stockMovementHandler.ListByProduct(w, r)
+			return
+		}
 
 		if strings.HasSuffix(path, "/stock-in") {
 			productHandler.StockIn(w, r)
@@ -99,10 +96,6 @@ func NewRouter(
 		}
 	})))
 
-	// Protected User Management routes (Admin Only):
-	// - GET   /api/v1/users     -> List
-	// - GET   /api/v1/users/{id} -> GetByID
-	// - PATCH /api/v1/users/{id} -> Update
 	if userHandler != nil {
 		mux.Handle("/api/v1/users", authMiddleware(productHTTP.RequireAdmin(http.HandlerFunc(func(
 			w http.ResponseWriter,
@@ -130,6 +123,21 @@ func NewRouter(
 				response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 			}
 		}))))
+	}
+
+	// GET /api/v1/stock-movements: Admin only. Includes movements of deleted
+	// products.
+	if stockMovementHandler != nil {
+		mux.Handle("/api/v1/stock-movements", authMiddleware(productHTTP.RequireAdmin(
+			http.HandlerFunc(stockMovementHandler.List),
+		)))
+	}
+
+	// GET /api/v1/dashboard/summary and /api/v1/dashboard/stock-movements:
+	// User & Admin.
+	if dashboardHandler != nil {
+		mux.Handle("/api/v1/dashboard/summary", authMiddleware(http.HandlerFunc(dashboardHandler.Summary)))
+		mux.Handle("/api/v1/dashboard/stock-movements", authMiddleware(http.HandlerFunc(dashboardHandler.StockMovementChart)))
 	}
 
 	return mux

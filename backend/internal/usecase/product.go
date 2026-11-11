@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 
 	"gostock/internal/domain"
@@ -33,12 +34,19 @@ func (uc *ProductUseCase) GetByID(
 		return nil, ErrInvalidID
 	}
 
-	return uc.repo.GetByID(ctx, id)
+	product, err := uc.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fromRepository(err)
+	}
+	return product, nil
 }
 
+// Create validates and stores a new product. actorID is the authenticated
+// user creating it; it is recorded on the 'initial' stock movement.
 func (uc *ProductUseCase) Create(
 	ctx context.Context,
 	product *domain.Product,
+	actorID int64,
 ) error {
 	if product == nil {
 		return ErrInvalidProduct
@@ -59,12 +67,29 @@ func (uc *ProductUseCase) Create(
 		return ErrInvalidProduct
 	}
 
-	return uc.repo.Create(ctx, product)
+	if !isValidMinimumStock(product.MinimumStock) {
+		return ErrInvalidProduct
+	}
+
+	if actorID <= 0 {
+		return ErrInvalidActor
+	}
+
+	return fromRepository(uc.repo.Create(ctx, product, actorID))
 }
 
+// isValidMinimumStock reports whether v fits products.minimum_stock: an
+// INTEGER column constrained by products_minimum_stock_check (>= 0).
+func isValidMinimumStock(v int) bool {
+	return v >= 0 && v <= math.MaxInt32
+}
+
+// Update edits the product's details. minimumStock is optional: nil keeps the
+// stored threshold, any other value replaces it.
 func (uc *ProductUseCase) Update(
 	ctx context.Context,
 	product *domain.Product,
+	minimumStock *int,
 ) error {
 	if product == nil {
 		return ErrInvalidProduct
@@ -91,7 +116,11 @@ func (uc *ProductUseCase) Update(
 		return ErrInvalidProduct
 	}
 
-	return uc.repo.Update(ctx, product)
+	if minimumStock != nil && !isValidMinimumStock(*minimumStock) {
+		return ErrInvalidProduct
+	}
+
+	return fromRepository(uc.repo.Update(ctx, product, minimumStock))
 }
 
 func (uc *ProductUseCase) Delete(
@@ -102,7 +131,7 @@ func (uc *ProductUseCase) Delete(
 		return ErrInvalidID
 	}
 
-	return uc.repo.Delete(ctx, id)
+	return fromRepository(uc.repo.Delete(ctx, id))
 }
 
 func (uc *ProductUseCase) List(
@@ -134,13 +163,20 @@ func (uc *ProductUseCase) List(
 		return nil, 0, ErrInvalidProduct
 	}
 
-	return uc.repo.List(ctx, query, page, limit, sortBy, order)
+	products, total, err := uc.repo.List(ctx, query, page, limit, sortBy, order)
+	if err != nil {
+		return nil, 0, fromRepository(err)
+	}
+	return products, total, nil
 }
 
+// StockIn adds stock. actorID is the authenticated user; it is recorded on
+// the 'in' stock movement.
 func (uc *ProductUseCase) StockIn(
 	ctx context.Context,
 	id int64,
 	quantity int,
+	actorID int64,
 ) (*domain.Product, error) {
 	if id <= 0 {
 		return nil, ErrInvalidID
@@ -148,14 +184,24 @@ func (uc *ProductUseCase) StockIn(
 	if quantity <= 0 {
 		return nil, ErrInvalidQuantity
 	}
+	if actorID <= 0 {
+		return nil, ErrInvalidActor
+	}
 
-	return uc.repo.StockIn(ctx, id, quantity)
+	product, err := uc.repo.StockIn(ctx, id, quantity, actorID)
+	if err != nil {
+		return nil, fromRepository(err)
+	}
+	return product, nil
 }
 
+// StockOut removes stock. actorID is the authenticated user; it is recorded
+// on the 'out' stock movement.
 func (uc *ProductUseCase) StockOut(
 	ctx context.Context,
 	id int64,
 	quantity int,
+	actorID int64,
 ) (*domain.Product, error) {
 	if id <= 0 {
 		return nil, ErrInvalidID
@@ -163,6 +209,13 @@ func (uc *ProductUseCase) StockOut(
 	if quantity <= 0 {
 		return nil, ErrInvalidQuantity
 	}
+	if actorID <= 0 {
+		return nil, ErrInvalidActor
+	}
 
-	return uc.repo.StockOut(ctx, id, quantity)
+	product, err := uc.repo.StockOut(ctx, id, quantity, actorID)
+	if err != nil {
+		return nil, fromRepository(err)
+	}
+	return product, nil
 }

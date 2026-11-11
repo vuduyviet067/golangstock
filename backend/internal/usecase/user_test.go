@@ -34,14 +34,14 @@ func (m *mockUserRepo) GetByEmail(ctx context.Context, email string) (*domain.Us
 	if m.getByEmailFn != nil {
 		return m.getByEmailFn(ctx, email)
 	}
-	return nil, domain.ErrUserNotFound
+	return nil, repository.ErrUserNotFound
 }
 
 func (m *mockUserRepo) GetByID(ctx context.Context, id int64) (*domain.User, error) {
 	if m.getByIDFn != nil {
 		return m.getByIDFn(ctx, id)
 	}
-	return nil, domain.ErrUserNotFound
+	return nil, repository.ErrUserNotFound
 }
 
 func (m *mockUserRepo) List(ctx context.Context, query string, page, limit int) ([]domain.User, int64, error) {
@@ -111,13 +111,13 @@ func TestUserUseCase_GetByID(t *testing.T) {
 	t.Run("user not found", func(t *testing.T) {
 		repo := &mockUserRepo{
 			getByIDFn: func(ctx context.Context, id int64) (*domain.User, error) {
-				return nil, domain.ErrUserNotFound
+				return nil, repository.ErrUserNotFound
 			},
 		}
 		uc := NewUserUseCase(repo)
 
 		_, err := uc.GetByID(context.Background(), 999)
-		if !errors.Is(err, domain.ErrUserNotFound) {
+		if !errors.Is(err, ErrUserNotFound) {
 			t.Fatalf("expected ErrUserNotFound, got %v", err)
 		}
 	})
@@ -215,13 +215,13 @@ func TestUserUseCase_Update(t *testing.T) {
 	t.Run("user not found", func(t *testing.T) {
 		repo := &mockUserRepo{
 			getByIDFn: func(ctx context.Context, id int64) (*domain.User, error) {
-				return nil, domain.ErrUserNotFound
+				return nil, repository.ErrUserNotFound
 			},
 		}
 		uc := NewUserUseCase(repo)
 		role := "admin"
 		_, err := uc.Update(context.Background(), 99, dto.UpdateUserInput{Role: &role})
-		if !errors.Is(err, domain.ErrUserNotFound) {
+		if !errors.Is(err, ErrUserNotFound) {
 			t.Fatalf("expected ErrUserNotFound, got %v", err)
 		}
 	})

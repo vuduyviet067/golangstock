@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -14,7 +13,10 @@ import (
 
 const EnvVar = "TEST_DATABASE_URL"
 
-const RequiredSuffix = "_test"
+// RequiredName is the only database integration tests may use. An exact name,
+// not just a "_test" suffix, keeps them off every other database, including
+// gostock_ui_test, which is reserved for manual UI testing.
+const RequiredName = "gostock_test"
 
 func Open(t testing.TB) *sql.DB {
 	t.Helper()
@@ -44,9 +46,9 @@ func Open(t testing.TB) *sql.DB {
 }
 
 func CheckName(name string) error {
-	if len(name) <= len(RequiredSuffix) || !strings.HasSuffix(name, RequiredSuffix) {
-		return fmt.Errorf("connected database %q does not end with %q; point %s at a dedicated test database",
-			name, RequiredSuffix, EnvVar)
+	if name != RequiredName {
+		return fmt.Errorf("connected database %q is not %q; point %s at the dedicated integration test database",
+			name, RequiredName, EnvVar)
 	}
 	return nil
 }

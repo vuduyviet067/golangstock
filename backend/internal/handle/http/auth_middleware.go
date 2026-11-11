@@ -85,12 +85,12 @@ func RequireRole(role string) func(http.Handler) http.Handler {
 }
 
 func RequireAdmin(next http.Handler) http.Handler {
-	return RequireRole(domain.RoleAdmin)(next)
+	return RequireRole(usecase.RoleAdmin)(next)
 }
 
 func IsAdmin(ctx context.Context) bool {
 	user, ok := CurrentUser(ctx)
-	return ok && user != nil && user.Role == domain.RoleAdmin
+	return ok && user != nil && user.Role == usecase.RoleAdmin
 }
 
 var _ Authenticator = (*usecase.AuthUseCase)(nil)

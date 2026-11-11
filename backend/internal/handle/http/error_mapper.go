@@ -8,11 +8,14 @@ import (
 	"strings"
 	"unicode"
 
-	"gostock/internal/domain"
 	"gostock/internal/dto"
 	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
 )
+
+// invalidQueryMessage is the message of 400 responses for invalid query
+// parameters; the offending parameter is named in data.fields.
+const invalidQueryMessage = "invalid query parameters"
 
 // NewValidationError constructs an HTTPError for 400 Bad Request with field-level details.
 func NewValidationError(message string, fields map[string]string, cause error) *dto.HTTPError {
@@ -62,36 +65,51 @@ func MapError(err error) *dto.HTTPError {
 		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Message: "invalid email", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidPassword):
 		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Message: "invalid password", Cause: err}
+	case errors.Is(err, usecase.ErrInvalidChartFrom):
+		return NewValidationError(invalidQueryMessage, map[string]string{"from": "must be a date in YYYY-MM-DD format"}, err)
+	case errors.Is(err, usecase.ErrInvalidChartTo):
+		return NewValidationError(invalidQueryMessage, map[string]string{"to": "must be a date in YYYY-MM-DD format"}, err)
+	case errors.Is(err, usecase.ErrChartRangeReversed):
+		return NewValidationError(invalidQueryMessage, map[string]string{"from": "must be on or before to"}, err)
+	case errors.Is(err, usecase.ErrChartRangeTooLong):
+		return NewValidationError(invalidQueryMessage, map[string]string{"to": "range must be at most 92 days by day or 731 days by month"}, err)
+	case errors.Is(err, usecase.ErrInvalidGranularity):
+		return NewValidationError(invalidQueryMessage, map[string]string{"granularity": "must be auto, day or month"}, err)
+	case errors.Is(err, usecase.ErrInvalidTimezone):
+		return NewValidationError(invalidQueryMessage, map[string]string{"tz": "must be an IANA time zone name"}, err)
 
 	// 401 Unauthorized — Authentication credentials / Session / Refresh token errors
 	case errors.Is(err, usecase.ErrInvalidCredentials):
 		return &dto.HTTPError{StatusCode: http.StatusUnauthorized, Message: "invalid email or password", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidSession):
 		return &dto.HTTPError{StatusCode: http.StatusUnauthorized, Message: "invalid or expired session", Cause: err}
-	case errors.Is(err, domain.ErrInvalidRefreshToken),
-		errors.Is(err, domain.ErrRefreshTokenNotFound),
-		errors.Is(err, domain.ErrRefreshTokenRevoked),
-		errors.Is(err, domain.ErrRefreshTokenExpired),
-		errors.Is(err, domain.ErrRefreshTokenReused):
+	case errors.Is(err, usecase.ErrInvalidActor):
+		// The authenticated user is missing or no longer exists.
+		return &dto.HTTPError{StatusCode: http.StatusUnauthorized, Message: "authentication required", Cause: err}
+	case errors.Is(err, usecase.ErrInvalidRefreshToken),
+		errors.Is(err, usecase.ErrRefreshTokenNotFound),
+		errors.Is(err, usecase.ErrRefreshTokenRevoked),
+		errors.Is(err, usecase.ErrRefreshTokenExpired),
+		errors.Is(err, usecase.ErrRefreshTokenReused):
 		return &dto.HTTPError{StatusCode: http.StatusUnauthorized, Message: "invalid or expired refresh token", Cause: err}
 
 	// 404 Not Found — Resource not found
-	case errors.Is(err, domain.ErrProductNotFound):
+	case errors.Is(err, usecase.ErrProductNotFound):
 		return &dto.HTTPError{StatusCode: http.StatusNotFound, Message: "Product not found", Cause: err}
-	case errors.Is(err, domain.ErrUserNotFound):
-		// Note: In auth flows (Login/Refresh), domain.ErrUserNotFound is already translated by
+	case errors.Is(err, usecase.ErrUserNotFound):
+		// Note: In auth flows (Login/Refresh), usecase.ErrUserNotFound is already translated by
 		// AuthUseCase into ErrInvalidCredentials / ErrInvalidSession (401). If ErrUserNotFound
 		// reaches the HTTP layer in user-management/resource endpoints, it indicates 404 Not Found.
 		return &dto.HTTPError{StatusCode: http.StatusNotFound, Message: "user not found", Cause: err}
 
 	// 409 Conflict — Business conflict & concurrent operations
-	case errors.Is(err, domain.ErrConcurrentRefresh):
+	case errors.Is(err, usecase.ErrConcurrentRefresh):
 		return &dto.HTTPError{StatusCode: http.StatusConflict, Message: "concurrent refresh in progress", Cause: err}
-	case errors.Is(err, domain.ErrProductSKUExists):
+	case errors.Is(err, usecase.ErrProductSKUExists):
 		return &dto.HTTPError{StatusCode: http.StatusConflict, Message: "SKU already exists", Cause: err}
-	case errors.Is(err, domain.ErrEmailExists):
+	case errors.Is(err, usecase.ErrEmailExists):
 		return &dto.HTTPError{StatusCode: http.StatusConflict, Message: "email already exists", Cause: err}
-	case errors.Is(err, domain.ErrInsufficientStock):
+	case errors.Is(err, usecase.ErrInsufficientStock):
 		return &dto.HTTPError{StatusCode: http.StatusConflict, Message: "Insufficient stock", Cause: err}
 
 	// 500 Internal Server Error — Server misconfiguration (e.g. non-positive TTL) or infrastructure failure

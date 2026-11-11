@@ -37,6 +37,34 @@ func run() error {
 	fmt.Println("It does not create accounts or change user roles.")
 	fmt.Println()
 
+	databaseURL, err := config.LoadDatabaseURL()
+	if err != nil {
+		return fmt.Errorf("load configuration: %w", err)
+	}
+	expectedDatabaseName, err := config.LoadExpectedDatabaseName()
+	if err != nil {
+		return fmt.Errorf("load configuration: %w", err)
+	}
+
+	// Open the database and, when EXPECTED_DATABASE_NAME is set, confirm on
+	// this pool that it is the expected database, before asking for any
+	// credential.
+	db, err := database.OpenPostgres(databaseURL)
+	if err != nil {
+		return fmt.Errorf("connect to database: %w", err)
+	}
+	defer db.Close()
+
+	if expectedDatabaseName != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+		err := database.VerifyDatabaseName(ctx, db, expectedDatabaseName)
+		cancel()
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Database preflight passed: %s\n", expectedDatabaseName)
+	}
+
 	reader := bufio.NewReader(os.Stdin)
 
 	email, err := readEmail(reader)
@@ -57,17 +85,6 @@ func run() error {
 	if password != confirmPassword {
 		return errors.New("passwords do not match")
 	}
-
-	databaseURL, err := config.LoadDatabaseURL()
-	if err != nil {
-		return fmt.Errorf("load configuration: %w", err)
-	}
-
-	db, err := database.OpenPostgres(databaseURL)
-	if err != nil {
-		return fmt.Errorf("connect to database: %w", err)
-	}
-	defer db.Close()
 
 	repo := postgres.NewUserRepository(db)
 	adminUseCase := usecase.NewAdminUseCaseWithPasswordReset(repo, repo)

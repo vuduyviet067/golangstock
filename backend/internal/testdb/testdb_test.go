@@ -11,15 +11,19 @@ func TestCheckName(t *testing.T) {
 		dbName  string
 		wantErr bool
 	}{
-		{name: "test database", dbName: "gostock_test"},
-		{name: "other test database", dbName: "inventory_test"},
+		{name: "integration test database", dbName: "gostock_test"},
+		{name: "UI test database", dbName: "gostock_ui_test", wantErr: true},
+		{name: "other _test database", dbName: "inventory_test", wantErr: true},
 		{name: "development database", dbName: "gostock", wantErr: true},
 		{name: "system database", dbName: "postgres", wantErr: true},
 		{name: "empty", dbName: "", wantErr: true},
 		{name: "suffix only", dbName: "_test", wantErr: true},
-		{name: "suffix not at end", dbName: "gostock_testing", wantErr: true},
-		{name: "suffix without underscore", dbName: "gostocktest", wantErr: true},
-		{name: "case sensitive", dbName: "gostock_TEST", wantErr: true},
+		{name: "longer name", dbName: "gostock_testing", wantErr: true},
+		{name: "prefixed name", dbName: "old_gostock_test", wantErr: true},
+		{name: "without underscore", dbName: "gostocktest", wantErr: true},
+		{name: "case sensitive", dbName: "GOSTOCK_TEST", wantErr: true},
+		{name: "leading space", dbName: " gostock_test", wantErr: true},
+		{name: "trailing space", dbName: "gostock_test ", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

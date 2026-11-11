@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"sync"
@@ -19,6 +20,9 @@ import (
 )
 
 const defaultShutdownTimeout = 10 * time.Second
+
+// databasePreflightTimeout bounds the current_database() check at startup.
+const databasePreflightTimeout = 5 * time.Second
 
 // App encapsulates the application's runtime dependencies and manages its lifecycle.
 type App struct {
@@ -60,6 +64,19 @@ func newApp(cfg dto.AppConfig, opener dbOpener, postDBHook func(db *sql.DB) erro
 		}
 	}()
 
+	// Database preflight: before anything is built on the pool (and long
+	// before the HTTP listener opens), confirm it is connected to the expected
+	// database. On failure the deferred cleanup closes the pool.
+	if cfg.ExpectedDatabaseName != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), databasePreflightTimeout)
+		err := database.VerifyDatabaseName(ctx, db, cfg.ExpectedDatabaseName)
+		cancel()
+		if err != nil {
+			return nil, err
+		}
+		slog.Info("database preflight passed", slog.String("database", cfg.ExpectedDatabaseName))
+	}
+
 	if postDBHook != nil {
 		if err := postDBHook(db); err != nil {
 			return nil, fmt.Errorf("post-database hook: %w", err)
@@ -70,6 +87,8 @@ func newApp(cfg dto.AppConfig, opener dbOpener, postDBHook func(db *sql.DB) erro
 	productRepo := postgres.NewProductRepository(db)
 	userRepo := postgres.NewUserRepository(db)
 	refreshRepo := postgres.NewRefreshTokenRepository(db)
+	stockMovementRepo := postgres.NewStockMovementRepository(db)
+	dashboardRepo := postgres.NewDashboardRepository(db)
 
 	// 4. Construct use cases
 	productUseCase := usecase.NewProductUseCase(productRepo)
@@ -82,15 +101,19 @@ func newApp(cfg dto.AppConfig, opener dbOpener, postDBHook func(db *sql.DB) erro
 		cfg.RefreshTokenGracePeriod,
 	)
 	userUseCase := usecase.NewUserUseCase(userRepo)
+	stockMovementUseCase := usecase.NewStockMovementUseCase(productRepo, stockMovementRepo)
+	dashboardUseCase := usecase.NewDashboardUseCase(dashboardRepo)
 
 	// 5. Construct HTTP handlers
 	cookieManager := productHTTP.NewCookieManager(cfg.CookieSecure, cfg.CookieSameSite, cfg.AccessTokenTTL, cfg.RefreshTokenTTL)
 	authHandler := productHTTP.NewAuthHandler(authUseCase, cookieManager)
 	productHandler := productHTTP.NewProductHandler(productUseCase)
 	userHandler := productHTTP.NewUserHandler(userUseCase)
+	stockMovementHandler := productHTTP.NewStockMovementHandler(stockMovementUseCase)
+	dashboardHandler := productHTTP.NewDashboardHandler(dashboardUseCase)
 
 	// 6. Construct router and middleware
-	router := NewRouter(db, productHandler, authHandler, authUseCase, userHandler)
+	router := NewRouter(db, productHandler, authHandler, authUseCase, userHandler, stockMovementHandler, dashboardHandler)
 	handler := productHTTP.CORSMiddleware(cfg.AllowedOrigins)(router)
 
 	// 7. Configure HTTP server with production-grade timeouts

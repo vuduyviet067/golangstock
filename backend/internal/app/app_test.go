@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +16,9 @@ import (
 	"gostock/internal/domain"
 	"gostock/internal/dto"
 	productHTTP "gostock/internal/handle/http"
+	"gostock/internal/platform/database"
 	"gostock/internal/repository"
+	"gostock/internal/testdb"
 	"gostock/internal/usecase"
 )
 
@@ -25,12 +28,12 @@ func (f *fakeProductRepo) GetByID(ctx context.Context, id int64) (*domain.Produc
 	return &domain.Product{ID: id, SKU: "SKU-001", Name: "Test Product", Price: 50, Quantity: 20}, nil
 }
 
-func (f *fakeProductRepo) Create(ctx context.Context, p *domain.Product) error {
+func (f *fakeProductRepo) Create(ctx context.Context, p *domain.Product, actorID int64) error {
 	p.ID = 1
 	return nil
 }
 
-func (f *fakeProductRepo) Update(ctx context.Context, p *domain.Product) error {
+func (f *fakeProductRepo) Update(ctx context.Context, p *domain.Product, minimumStock *int) error {
 	return nil
 }
 
@@ -44,11 +47,11 @@ func (f *fakeProductRepo) List(ctx context.Context, query string, page, limit in
 	}, 1, nil
 }
 
-func (f *fakeProductRepo) StockIn(ctx context.Context, id int64, quantity int) (*domain.Product, error) {
+func (f *fakeProductRepo) StockIn(ctx context.Context, id int64, quantity int, actorID int64) (*domain.Product, error) {
 	return &domain.Product{ID: id, SKU: "SKU-001", Name: "Test Product", Price: 50, Quantity: 20 + quantity}, nil
 }
 
-func (f *fakeProductRepo) StockOut(ctx context.Context, id int64, quantity int) (*domain.Product, error) {
+func (f *fakeProductRepo) StockOut(ctx context.Context, id int64, quantity int, actorID int64) (*domain.Product, error) {
 	return &domain.Product{ID: id, SKU: "SKU-001", Name: "Test Product", Price: 50, Quantity: 20 - quantity}, nil
 }
 
@@ -69,13 +72,13 @@ type fakeUserRepo struct{}
 
 func (f *fakeUserRepo) Create(ctx context.Context, user *domain.User) error { return nil }
 func (f *fakeUserRepo) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
-	return nil, domain.ErrUserNotFound
+	return nil, repository.ErrUserNotFound
 }
 func (f *fakeUserRepo) GetByID(ctx context.Context, id int64) (*domain.User, error) {
 	if id == 1 {
 		return &domain.User{ID: 1, Email: "target@example.com", Role: "user"}, nil
 	}
-	return nil, domain.ErrUserNotFound
+	return nil, repository.ErrUserNotFound
 }
 func (f *fakeUserRepo) List(ctx context.Context, query string, page, limit int) ([]domain.User, int64, error) {
 	return []domain.User{}, 0, nil
@@ -96,7 +99,7 @@ func (f *fakeRefreshTokenRepo) Create(ctx context.Context, token *domain.Refresh
 	return nil
 }
 func (f *fakeRefreshTokenRepo) GetByTokenHash(ctx context.Context, tokenHash string) (*domain.RefreshToken, error) {
-	return nil, domain.ErrRefreshTokenNotFound
+	return nil, repository.ErrRefreshTokenNotFound
 }
 func (f *fakeRefreshTokenRepo) Rotate(ctx context.Context, oldTokenHash string, newToken *domain.RefreshToken) error {
 	return nil
@@ -133,7 +136,13 @@ func setupTestRouter() *http.ServeMux {
 
 	authenticator := &fakeAuth{}
 
-	return NewRouter(nil, productHandler, authHandler, authenticator, userHandler)
+	stockMovementHandler := productHTTP.NewStockMovementHandler(
+		usecase.NewStockMovementUseCase(productRepo, &fakeStockMovementRepo{}),
+	)
+
+	dashboardHandler := productHTTP.NewDashboardHandler(usecase.NewDashboardUseCase(&fakeDashboardRepo{}))
+
+	return NewRouter(nil, productHandler, authHandler, authenticator, userHandler, stockMovementHandler, dashboardHandler)
 }
 
 func TestProductRoutes_AuthorizationMatrix(t *testing.T) {
@@ -517,7 +526,7 @@ func TestRouter_RouteRegistration(t *testing.T) {
 		authenticator := &fakeAuth{}
 		userUC := usecase.NewUserUseCase(userRepo)
 		userHandler := productHTTP.NewUserHandler(userUC)
-		router := NewRouter(db, productHandler, authHandler, authenticator, userHandler)
+		router := NewRouter(db, productHandler, authHandler, authenticator, userHandler, nil, nil)
 
 		req := httptest.NewRequest(http.MethodGet, "/ready", nil)
 		rec := httptest.NewRecorder()
@@ -1020,4 +1029,123 @@ func TestStart_CloseFailureAfterSuccessfulRun(t *testing.T) {
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("database Close was not attempted: %v", err)
 	}
+}
+
+// preflightConfig returns a configuration for the integration test database,
+// whose name testdb.Open has already checked to be exactly gostock_test.
+func preflightConfig(t *testing.T, expected string) dto.AppConfig {
+	t.Helper()
+	testdb.Open(t)
+	cfg := startTestConfig()
+	cfg.DatabaseURL = os.Getenv(testdb.EnvVar)
+	cfg.ExpectedDatabaseName = expected
+	return cfg
+}
+
+// trackingOpener opens the real database and records the pool it returned.
+func trackingOpener(opened **sql.DB) dbOpener {
+	return func(dsn string) (*sql.DB, error) {
+		db, err := database.OpenPostgres(dsn)
+		*opened = db
+		return db, err
+	}
+}
+
+func assertPoolClosed(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if db == nil {
+		t.Fatal("the database was never opened")
+	}
+	if err := db.Ping(); err == nil || !strings.Contains(err.Error(), "database is closed") {
+		t.Errorf("Ping after failed construction = %v, want the pool closed", err)
+	}
+}
+
+func TestNewApp_DatabasePreflight(t *testing.T) {
+	t.Run("connected to another database: refused and pool closed", func(t *testing.T) {
+		// The UI database is expected, but DATABASE_URL points at gostock_test.
+		cfg := preflightConfig(t, "gostock_ui_test")
+		var opened *sql.DB
+		hookRan := false
+
+		app, err := newApp(cfg, trackingOpener(&opened), func(*sql.DB) error {
+			hookRan = true
+			return nil
+		})
+		if err == nil {
+			_ = app.Close()
+			t.Fatal("newApp succeeded on the wrong database")
+		}
+		if app != nil {
+			t.Error("newApp returned an App with its error")
+		}
+		if want := `connected to "gostock_test", expected "gostock_ui_test"`; !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to contain %q", err, want)
+		}
+		if strings.Contains(err.Error(), cfg.DatabaseURL) {
+			t.Error("error contains the connection string")
+		}
+		if hookRan {
+			t.Error("construction continued past the failed preflight")
+		}
+		assertPoolClosed(t, opened)
+	})
+
+	t.Run("connected to the expected database: constructed", func(t *testing.T) {
+		cfg := preflightConfig(t, testdb.RequiredName)
+		var opened *sql.DB
+
+		app, err := newApp(cfg, trackingOpener(&opened), nil)
+		if err != nil {
+			t.Fatalf("newApp: %v", err)
+		}
+		if err := app.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	})
+
+	t.Run("unset: no query is run, as before", func(t *testing.T) {
+		db, mock, err := sqlmock.New() // fails on any query it does not expect
+		if err != nil {
+			t.Fatalf("sqlmock: %v", err)
+		}
+		mock.ExpectClose()
+
+		cfg := startTestConfig()
+		cfg.ExpectedDatabaseName = ""
+		app, err := newApp(cfg, func(string) (*sql.DB, error) { return db, nil }, nil)
+		if err != nil {
+			t.Fatalf("newApp: %v", err)
+		}
+		if err := app.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unexpected database use: %v", err)
+		}
+	})
+}
+
+// TestStart_DatabasePreflightFailureDoesNotListen goes through the same path
+// as the server (Start): on the wrong database it fails before binding.
+func TestStart_DatabasePreflightFailureDoesNotListen(t *testing.T) {
+	cfg := preflightConfig(t, "gostock_ui_test")
+	var opened *sql.DB
+	ready := make(chan struct{})
+
+	// Without the preflight, start would serve until cancelled: the deadline
+	// turns that regression into a failure instead of a hang.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err := start(ctx, cfg, trackingOpener(&opened), ready, "127.0.0.1:0")
+	select {
+	case <-ready:
+		t.Fatal("the HTTP listener was bound despite the wrong database")
+	default:
+	}
+	if err == nil || !strings.Contains(err.Error(), `expected "gostock_ui_test"`) {
+		t.Fatalf("start error = %v, want the preflight error", err)
+	}
+	assertPoolClosed(t, opened)
 }

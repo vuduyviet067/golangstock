@@ -33,7 +33,7 @@ func TestProductEndpoints_JSONContract(t *testing.T) {
 			method:     http.MethodGet,
 			path:       "/api/v1/products/7",
 			wantStatus: http.StatusOK,
-			wantBody:   `{"success":true,"message":"Product retrieved successfully","data":{"id":7,"sku":"SKU007","name":"Keyboard","price":99.5,"quantity":5}}`,
+			wantBody:   `{"success":true,"message":"Product retrieved successfully","data":{"id":7,"sku":"SKU007","name":"Keyboard","price":99.5,"quantity":5,"minimum_stock":0}}`,
 		},
 		{
 			name: "list",
@@ -44,7 +44,7 @@ func TestProductEndpoints_JSONContract(t *testing.T) {
 			method:     http.MethodGet,
 			path:       "/api/v1/products",
 			wantStatus: http.StatusOK,
-			wantBody:   `{"success":true,"message":"Products retrieved successfully","data":[{"id":1,"sku":"SKU001","name":"Mouse","price":25,"quantity":0},{"id":2,"sku":"SKU002","name":"Monitor","price":199.99,"quantity":12}]}`,
+			wantBody:   `{"success":true,"message":"Products retrieved successfully","data":[{"id":1,"sku":"SKU001","name":"Mouse","price":25,"quantity":0,"minimum_stock":0},{"id":2,"sku":"SKU002","name":"Monitor","price":199.99,"quantity":12,"minimum_stock":0}]}`,
 		},
 		{
 			name:       "list empty",
@@ -70,7 +70,7 @@ func TestProductEndpoints_JSONContract(t *testing.T) {
 			body:   `{"id":99,"sku":"  SKU010  ","name":" Mouse ","price":25,"quantity":3}`,
 			// The ID comes from the repository, never from the request.
 			wantStatus: http.StatusCreated,
-			wantBody:   `{"success":true,"message":"Product created successfully","data":{"id":123,"sku":"SKU010","name":"Mouse","price":25,"quantity":3}}`,
+			wantBody:   `{"success":true,"message":"Product created successfully","data":{"id":123,"sku":"SKU010","name":"Mouse","price":25,"quantity":3,"minimum_stock":0}}`,
 		},
 		{
 			name:       "update returns stored quantity",
@@ -79,7 +79,7 @@ func TestProductEndpoints_JSONContract(t *testing.T) {
 			path:       "/api/v1/products/7",
 			body:       `{"sku":"SKU007","name":"Keyboard Pro","price":120}`,
 			wantStatus: http.StatusOK,
-			wantBody:   `{"success":true,"message":"Product updated successfully","data":{"id":7,"sku":"SKU007","name":"Keyboard Pro","price":120,"quantity":5}}`,
+			wantBody:   `{"success":true,"message":"Product updated successfully","data":{"id":7,"sku":"SKU007","name":"Keyboard Pro","price":120,"quantity":5,"minimum_stock":0}}`,
 		},
 		{
 			name:       "delete",
@@ -96,7 +96,7 @@ func TestProductEndpoints_JSONContract(t *testing.T) {
 			path:       "/api/v1/products/7/stock-in",
 			body:       `{"quantity":3}`,
 			wantStatus: http.StatusOK,
-			wantBody:   `{"success":true,"message":"Stock added successfully","data":{"id":7,"sku":"SKU007","name":"Keyboard","price":99.5,"quantity":8}}`,
+			wantBody:   `{"success":true,"message":"Stock added successfully","data":{"id":7,"sku":"SKU007","name":"Keyboard","price":99.5,"quantity":8,"minimum_stock":0}}`,
 		},
 		{
 			name:       "stock out",
@@ -105,7 +105,7 @@ func TestProductEndpoints_JSONContract(t *testing.T) {
 			path:       "/api/v1/products/7/stock-out",
 			body:       `{"quantity":3}`,
 			wantStatus: http.StatusOK,
-			wantBody:   `{"success":true,"message":"Stock reduced successfully","data":{"id":7,"sku":"SKU007","name":"Keyboard","price":99.5,"quantity":2}}`,
+			wantBody:   `{"success":true,"message":"Stock reduced successfully","data":{"id":7,"sku":"SKU007","name":"Keyboard","price":99.5,"quantity":2,"minimum_stock":0}}`,
 		},
 	}
 
@@ -131,7 +131,8 @@ func TestProductEndpoints_JSONContract(t *testing.T) {
 				req.Header.Set("Content-Type", "application/json")
 			}
 			rec := httptest.NewRecorder()
-			serve(rec, req)
+			// AuthMiddleware sets the user on every product route.
+			serve(rec, withTestUser(req))
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())

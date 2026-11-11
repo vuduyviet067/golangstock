@@ -32,7 +32,7 @@ func (f *fakeUserRepository) GetByEmail(ctx context.Context, email string) (*dom
 		return nil, f.getByEmailErr
 	}
 	if f.user == nil {
-		return nil, domain.ErrUserNotFound
+		return nil, repository.ErrUserNotFound
 	}
 	copy := *f.user
 	return &copy, nil
@@ -45,7 +45,7 @@ func (f *fakeUserRepository) GetByID(ctx context.Context, id int64) (*domain.Use
 		return nil, f.getByIDErr
 	}
 	if f.user == nil {
-		return nil, domain.ErrUserNotFound
+		return nil, repository.ErrUserNotFound
 	}
 	copy := *f.user
 	return &copy, nil
@@ -117,7 +117,7 @@ func (f *fakeRefreshTokenRepository) GetByTokenHash(ctx context.Context, tokenHa
 		return nil, f.getErr
 	}
 	if f.token == nil {
-		return nil, domain.ErrRefreshTokenNotFound
+		return nil, repository.ErrRefreshTokenNotFound
 	}
 	copy := *f.token
 	return &copy, nil
@@ -274,7 +274,7 @@ func TestRegisterInvalidInput(t *testing.T) {
 
 func TestRegisterDuplicateEmail(t *testing.T) {
 	users := &fakeUserRepository{
-		createErr: domain.ErrEmailExists,
+		createErr: repository.ErrEmailExists,
 	}
 	uc := newTestAuthUseCase(users, &fakeRefreshTokenRepository{}, nil)
 
@@ -283,8 +283,8 @@ func TestRegisterDuplicateEmail(t *testing.T) {
 		"viet@example.com",
 		"password123",
 	)
-	if !errors.Is(err, domain.ErrEmailExists) {
-		t.Fatalf("Register() error = %v, want %v", err, domain.ErrEmailExists)
+	if !errors.Is(err, ErrEmailExists) {
+		t.Fatalf("Register() error = %v, want %v", err, ErrEmailExists)
 	}
 }
 
@@ -486,7 +486,7 @@ func TestLogoutSuccess(t *testing.T) {
 
 func TestLogoutInvalidOrEmpty(t *testing.T) {
 	tokens := &fakeRefreshTokenRepository{
-		revokeErr: domain.ErrRefreshTokenNotFound,
+		revokeErr: repository.ErrRefreshTokenNotFound,
 	}
 	uc := newTestAuthUseCase(&fakeUserRepository{}, tokens, nil)
 
@@ -719,13 +719,13 @@ func TestRefresh_RotateReused_StaleFallbackFix(t *testing.T) {
 	t.Run("GetByTokenHash returns NotFound on second fetch", func(t *testing.T) {
 		users := &fakeUserRepository{user: user}
 		tokens := &fakeRefreshTokenRepository{
-			rotateErr: domain.ErrRefreshTokenReused,
+			rotateErr: repository.ErrRefreshTokenReused,
 			getByHashFn: func(ctx context.Context, tokenHash string, callCount int) (*domain.RefreshToken, error) {
 				if callCount == 1 {
 					copy := *activeToken
 					return &copy, nil
 				}
-				return nil, domain.ErrRefreshTokenNotFound
+				return nil, repository.ErrRefreshTokenNotFound
 			},
 		}
 		uc := newTestAuthUseCase(users, tokens, &fakeTokenManager{})
@@ -749,7 +749,7 @@ func TestRefresh_RotateReused_StaleFallbackFix(t *testing.T) {
 		dbErr := errors.New("infrastructure DB failure")
 		users := &fakeUserRepository{user: user}
 		tokens := &fakeRefreshTokenRepository{
-			rotateErr: domain.ErrRefreshTokenReused,
+			rotateErr: repository.ErrRefreshTokenReused,
 			getByHashFn: func(ctx context.Context, tokenHash string, callCount int) (*domain.RefreshToken, error) {
 				if callCount == 1 {
 					copy := *activeToken
@@ -779,7 +779,7 @@ func TestRefresh_RotateReused_StaleFallbackFix(t *testing.T) {
 	t.Run("GetByTokenHash returns nil token on second fetch", func(t *testing.T) {
 		users := &fakeUserRepository{user: user}
 		tokens := &fakeRefreshTokenRepository{
-			rotateErr: domain.ErrRefreshTokenReused,
+			rotateErr: repository.ErrRefreshTokenReused,
 			getByHashFn: func(ctx context.Context, tokenHash string, callCount int) (*domain.RefreshToken, error) {
 				if callCount == 1 {
 					copy := *activeToken
@@ -819,7 +819,7 @@ func TestRefresh_RotateReused_StaleFallbackFix(t *testing.T) {
 
 		users := &fakeUserRepository{user: user}
 		tokens := &fakeRefreshTokenRepository{
-			rotateErr: domain.ErrRefreshTokenReused,
+			rotateErr: repository.ErrRefreshTokenReused,
 			getByHashFn: func(ctx context.Context, tokenHash string, callCount int) (*domain.RefreshToken, error) {
 				if callCount == 1 {
 					copy := *activeToken
@@ -859,7 +859,7 @@ func TestRefresh_RotateReused_StaleFallbackFix(t *testing.T) {
 
 		users := &fakeUserRepository{user: user}
 		tokens := &fakeRefreshTokenRepository{
-			rotateErr: domain.ErrRefreshTokenReused,
+			rotateErr: repository.ErrRefreshTokenReused,
 			getByHashFn: func(ctx context.Context, tokenHash string, callCount int) (*domain.RefreshToken, error) {
 				if callCount == 1 {
 					copy := *activeToken
@@ -899,7 +899,7 @@ func TestRefresh_RotateReused_StaleFallbackFix(t *testing.T) {
 
 		users := &fakeUserRepository{user: user}
 		tokens := &fakeRefreshTokenRepository{
-			rotateErr: domain.ErrRefreshTokenReused,
+			rotateErr: repository.ErrRefreshTokenReused,
 			getByHashFn: func(ctx context.Context, tokenHash string, callCount int) (*domain.RefreshToken, error) {
 				if callCount == 1 {
 					copy := *activeToken
@@ -959,7 +959,7 @@ func TestRefresh_CR_T01_ConcurrentRefresh_WithinGracePeriod(t *testing.T) {
 	// 4. Request A re-reads token via GetByTokenHash, getting tokenAfterRequestB
 	users := &fakeUserRepository{user: user}
 	tokens := &fakeRefreshTokenRepository{
-		rotateErr: domain.ErrRefreshTokenReused,
+		rotateErr: repository.ErrRefreshTokenReused,
 		getByHashFn: func(ctx context.Context, tokenHash string, callCount int) (*domain.RefreshToken, error) {
 			if callCount == 1 {
 				copy := *activeToken
@@ -1020,7 +1020,7 @@ func TestRefresh_CR_T02_ReusedToken_OutsideGracePeriod_RevokeAllFailureNotSwallo
 	dbErr := errors.New("database connection refused during token revocation")
 	users := &fakeUserRepository{user: user}
 	tokens := &fakeRefreshTokenRepository{
-		rotateErr: domain.ErrRefreshTokenReused,
+		rotateErr: repository.ErrRefreshTokenReused,
 		getByHashFn: func(ctx context.Context, tokenHash string, callCount int) (*domain.RefreshToken, error) {
 			if callCount == 1 {
 				copy := *activeToken
@@ -1065,7 +1065,7 @@ func TestRefresh_CR_T04_UserNotFoundOrDeleted(t *testing.T) {
 
 	t.Run("user deleted/not found returns ErrInvalidSession without rotation", func(t *testing.T) {
 		users := &fakeUserRepository{
-			getByIDErr: domain.ErrUserNotFound,
+			getByIDErr: repository.ErrUserNotFound,
 		}
 		tokens := &fakeRefreshTokenRepository{
 			token: activeToken,
@@ -1150,7 +1150,7 @@ func TestRefresh_CR_T05_RotateErrorsMapped(t *testing.T) {
 		users := &fakeUserRepository{user: user}
 		tokens := &fakeRefreshTokenRepository{
 			token:     activeToken,
-			rotateErr: domain.ErrRefreshTokenRevoked,
+			rotateErr: repository.ErrRefreshTokenRevoked,
 		}
 		uc := newTestAuthUseCase(users, tokens, &fakeTokenManager{})
 
@@ -1164,7 +1164,7 @@ func TestRefresh_CR_T05_RotateErrorsMapped(t *testing.T) {
 		users := &fakeUserRepository{user: user}
 		tokens := &fakeRefreshTokenRepository{
 			token:     activeToken,
-			rotateErr: domain.ErrRefreshTokenExpired,
+			rotateErr: repository.ErrRefreshTokenExpired,
 		}
 		uc := newTestAuthUseCase(users, tokens, &fakeTokenManager{})
 
@@ -1178,7 +1178,7 @@ func TestRefresh_CR_T05_RotateErrorsMapped(t *testing.T) {
 		users := &fakeUserRepository{user: user}
 		tokens := &fakeRefreshTokenRepository{
 			token:     activeToken,
-			rotateErr: domain.ErrRefreshTokenNotFound,
+			rotateErr: repository.ErrRefreshTokenNotFound,
 		}
 		uc := newTestAuthUseCase(users, tokens, &fakeTokenManager{})
 

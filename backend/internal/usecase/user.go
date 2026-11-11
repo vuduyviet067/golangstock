@@ -39,7 +39,7 @@ func (uc *UserUseCase) GetByID(ctx context.Context, id int64) (*domain.User, err
 
 	user, err := uc.repo.GetByID(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, fromRepository(err)
 	}
 
 	user.PasswordHash = ""
@@ -61,7 +61,7 @@ func (uc *UserUseCase) List(
 	query = strings.TrimSpace(query)
 	users, total, err := uc.repo.List(ctx, query, page, limit)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, fromRepository(err)
 	}
 
 	for i := range users {
@@ -86,7 +86,7 @@ func (uc *UserUseCase) Update(
 
 	existing, err := uc.repo.GetByID(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, fromRepository(err)
 	}
 
 	targetEmail := existing.Email
@@ -103,7 +103,7 @@ func (uc *UserUseCase) Update(
 
 	if input.Role != nil {
 		trimmedRole := strings.TrimSpace(*input.Role)
-		if !domain.IsValidRole(trimmedRole) {
+		if !IsValidRole(trimmedRole) {
 			return nil, ErrInvalidUserRole
 		}
 		if trimmedRole != existing.Role {
@@ -121,11 +121,11 @@ func (uc *UserUseCase) Update(
 
 	if roleChanged {
 		if err := uc.repo.UpdateAndRevokeTokens(ctx, userToUpdate, time.Now().UTC()); err != nil {
-			return nil, err
+			return nil, fromRepository(err)
 		}
 	} else {
 		if err := uc.repo.Update(ctx, userToUpdate); err != nil {
-			return nil, err
+			return nil, fromRepository(err)
 		}
 	}
 

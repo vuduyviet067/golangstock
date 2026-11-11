@@ -35,7 +35,38 @@ func run() error {
 	fmt.Println(" GoStock - First Admin Account Initialization CLI")
 	fmt.Println("==================================================")
 
-	// 1. Read admin credentials interactively. Confirmation is an interaction
+	// 1. Load database configuration. Only DATABASE_URL (and the optional
+	// EXPECTED_DATABASE_NAME) is needed here, so server-only settings
+	// (JWT_SECRET, CORS_ALLOWED_ORIGINS) are not required.
+	databaseURL, err := config.LoadDatabaseURL()
+	if err != nil {
+		return fmt.Errorf("load configuration: %w", err)
+	}
+	expectedDatabaseName, err := config.LoadExpectedDatabaseName()
+	if err != nil {
+		return fmt.Errorf("load configuration: %w", err)
+	}
+
+	// 2. Open PostgreSQL connection and, when EXPECTED_DATABASE_NAME is set,
+	// confirm on this pool that it is the expected database. Both happen
+	// before any credential is asked for, so a wrong database fails first.
+	db, err := database.OpenPostgres(databaseURL)
+	if err != nil {
+		return fmt.Errorf("connect to database: %w", err)
+	}
+	defer db.Close()
+
+	if expectedDatabaseName != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+		err := database.VerifyDatabaseName(ctx, db, expectedDatabaseName)
+		cancel()
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Database preflight passed: %s\n", expectedDatabaseName)
+	}
+
+	// 3. Read admin credentials interactively. Confirmation is an interaction
 	// concern, so it stays here; validation belongs to the use case.
 	email, err := readEmail()
 	if err != nil {
@@ -55,20 +86,6 @@ func run() error {
 	if password != confirmPassword {
 		return errors.New("passwords do not match")
 	}
-
-	// 2. Load database configuration. Only DATABASE_URL is needed here, so
-	// server-only settings (JWT_SECRET, CORS_ALLOWED_ORIGINS) are not required.
-	databaseURL, err := config.LoadDatabaseURL()
-	if err != nil {
-		return fmt.Errorf("load configuration: %w", err)
-	}
-
-	// 3. Open PostgreSQL connection
-	db, err := database.OpenPostgres(databaseURL)
-	if err != nil {
-		return fmt.Errorf("connect to database: %w", err)
-	}
-	defer db.Close()
 
 	// 4. Wire dependencies
 	adminUseCase := usecase.NewAdminUseCase(postgres.NewUserRepository(db))

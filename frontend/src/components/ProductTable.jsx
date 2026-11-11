@@ -35,14 +35,18 @@ export function ProductTable({
     return order === 'asc' ? 'ascending' : 'descending'
   }
 
-  const renderStockBadge = (quantity) => {
+  // Same rules as the backend dashboard: out of stock when quantity = 0, low
+  // stock when 0 < quantity <= minimum_stock, normal otherwise. With
+  // minimum_stock 0 a product in stock is always normal.
+  const renderStockBadge = (quantity, minimumStock = 0) => {
+    const title = `Tồn kho tối thiểu: ${minimumStock}`
     if (quantity <= 0) {
-      return <span className="badge badge-danger">Hết hàng (0)</span>
+      return <span className="badge badge-danger" title={title}>Hết hàng (0)</span>
     }
-    if (quantity <= 5) {
-      return <span className="badge badge-warning">Sắp hết ({quantity})</span>
+    if (quantity <= minimumStock) {
+      return <span className="badge badge-warning" title={title}>Sắp hết ({quantity})</span>
     }
-    return <span className="badge badge-success">Còn hàng ({quantity})</span>
+    return <span className="badge badge-success" title={title}>Bình thường ({quantity})</span>
   }
 
   const isNextDisabled = loading || products.length < limit
@@ -116,7 +120,7 @@ export function ProductTable({
                     {currencyFormatter.format(p.price)}
                   </td>
                   <td className="td-quantity text-center">
-                    {renderStockBadge(p.quantity)}
+                    {renderStockBadge(p.quantity, p.minimum_stock ?? 0)}
                   </td>
                   <td className="td-actions text-center">
                     <div className="actions-group">

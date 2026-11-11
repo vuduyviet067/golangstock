@@ -27,6 +27,13 @@ type fakeProductRepository struct {
 	// storedQuantity simulates the quantity the database returns from
 	// Update (RETURNING quantity); Update never writes it.
 	storedQuantity int
+	// storedMinimumStock simulates the threshold already in the database;
+	// Update keeps it when minimumStock is nil.
+	storedMinimumStock int
+	// updateMinimumStock records the minimumStock argument passed to Update.
+	updateMinimumStock *int
+	// createdProduct records the product passed to Create.
+	createdProduct *domain.Product
 	deleteErr      error
 
 	stockInErr     error
@@ -34,6 +41,26 @@ type fakeProductRepository struct {
 
 	stockOutErr     error
 	stockOutProduct *domain.Product
+
+	// actorID records the actor passed to Create, StockIn or StockOut;
+	// stockCalls counts those calls.
+	actorID    int64
+	stockCalls int
+}
+
+// testActorID is the authenticated user attached by withTestUser.
+const testActorID int64 = 42
+
+// withUserID attaches an authenticated user with the given ID to req, as
+// AuthMiddleware does for a valid token.
+func withUserID(req *http.Request, id int64) *http.Request {
+	user := &domain.User{ID: id, Email: "actor@example.test", Role: usecase.RoleUser}
+	return req.WithContext(context.WithValue(req.Context(), authenticatedUserKey, user))
+}
+
+// withTestUser attaches the default test user (testActorID) to req.
+func withTestUser(req *http.Request) *http.Request {
+	return withUserID(req, testActorID)
 }
 
 func (f *fakeProductRepository) GetByID(
@@ -49,10 +76,16 @@ func (f *fakeProductRepository) GetByID(
 func (f *fakeProductRepository) Create(
 	ctx context.Context,
 	product *domain.Product,
+	actorID int64,
 ) error {
+	f.actorID = actorID
+	f.stockCalls++
 	if f.createErr != nil {
 		return f.createErr
 	}
+
+	created := *product
+	f.createdProduct = &created
 
 	product.ID = f.createID
 	return nil
@@ -61,6 +94,7 @@ func (f *fakeProductRepository) Create(
 func (f *fakeProductRepository) Update(
 	ctx context.Context,
 	product *domain.Product,
+	minimumStock *int,
 ) error {
 	if f.updateErr != nil {
 		return f.updateErr
@@ -68,8 +102,13 @@ func (f *fakeProductRepository) Update(
 
 	copiedProduct := *product
 	f.updatedProduct = &copiedProduct
+	f.updateMinimumStock = minimumStock
 
 	product.Quantity = f.storedQuantity
+	product.MinimumStock = f.storedMinimumStock
+	if minimumStock != nil {
+		product.MinimumStock = *minimumStock
+	}
 	return nil
 }
 
@@ -97,7 +136,10 @@ func (f *fakeProductRepository) StockIn(
 	ctx context.Context,
 	id int64,
 	quantity int,
+	actorID int64,
 ) (*domain.Product, error) {
+	f.actorID = actorID
+	f.stockCalls++
 	if f.stockInErr != nil {
 		return nil, f.stockInErr
 	}
@@ -117,7 +159,10 @@ func (f *fakeProductRepository) StockOut(
 	ctx context.Context,
 	id int64,
 	quantity int,
+	actorID int64,
 ) (*domain.Product, error) {
+	f.actorID = actorID
+	f.stockCalls++
 	if f.stockOutErr != nil {
 		return nil, f.stockOutErr
 	}
@@ -181,7 +226,7 @@ func TestGetByID(t *testing.T) {
 			name:           "product not found",
 			method:         http.MethodGet,
 			path:           "/api/v1/products/99",
-			repoErr:        domain.ErrProductNotFound,
+			repoErr:        repository.ErrProductNotFound,
 			wantStatus:     http.StatusNotFound,
 			wantBodyString: `"message":"Product not found"`,
 		},
@@ -398,7 +443,7 @@ func TestCreate(t *testing.T) {
 			name:       "duplicate SKU",
 			method:     http.MethodPost,
 			body:       `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
-			createErr:  domain.ErrProductSKUExists,
+			createErr:  repository.ErrProductSKUExists,
 			wantStatus: http.StatusConflict,
 			wantBody:   `"message":"SKU already exists"`,
 		},
@@ -436,7 +481,7 @@ func TestCreate(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
-			handler.Create(rec, req)
+			handler.Create(rec, withTestUser(req))
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf(
@@ -534,7 +579,7 @@ func TestUpdate(t *testing.T) {
 			method:         http.MethodPut,
 			path:           "/api/v1/products/99",
 			body:           `{"sku":"SKU001","name":"Keyboard","price":100}`,
-			repoErr:        domain.ErrProductNotFound,
+			repoErr:        repository.ErrProductNotFound,
 			wantStatus:     http.StatusNotFound,
 			wantBodyString: `"message":"Product not found"`,
 		},
@@ -543,7 +588,7 @@ func TestUpdate(t *testing.T) {
 			method:         http.MethodPut,
 			path:           "/api/v1/products/1",
 			body:           `{"sku":"SKU001","name":"Keyboard","price":100}`,
-			repoErr:        domain.ErrProductSKUExists,
+			repoErr:        repository.ErrProductSKUExists,
 			wantStatus:     http.StatusConflict,
 			wantBodyString: `"message":"SKU already exists"`,
 		},
@@ -715,6 +760,153 @@ func TestUpdateReportsStoredQuantity(t *testing.T) {
 	}
 }
 
+// TestUpdateMinimumStock covers the optional PUT field: a missing or null
+// minimum_stock reaches the repository as nil (keep the stored value), 0 and
+// positive values are passed through, and negative values are rejected.
+func TestUpdateMinimumStock(t *testing.T) {
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+		// wantArg is the minimumStock the repository must receive; nil means
+		// a nil pointer. Ignored when the repository must not be called.
+		wantArg      *int
+		wantResponse string
+	}{
+		{
+			name:         "missing keeps stored value",
+			body:         `{"sku":"SKU001","name":"Keyboard","price":100}`,
+			wantStatus:   http.StatusOK,
+			wantResponse: `"minimum_stock":8`,
+		},
+		{
+			name:         "null keeps stored value",
+			body:         `{"sku":"SKU001","name":"Keyboard","price":100,"minimum_stock":null}`,
+			wantStatus:   http.StatusOK,
+			wantResponse: `"minimum_stock":8`,
+		},
+		{
+			name:         "zero is a valid value",
+			body:         `{"sku":"SKU001","name":"Keyboard","price":100,"minimum_stock":0}`,
+			wantStatus:   http.StatusOK,
+			wantArg:      intPtr(0),
+			wantResponse: `"minimum_stock":0`,
+		},
+		{
+			name:         "positive value",
+			body:         `{"sku":"SKU001","name":"Keyboard","price":100,"minimum_stock":5}`,
+			wantStatus:   http.StatusOK,
+			wantArg:      intPtr(5),
+			wantResponse: `"minimum_stock":5`,
+		},
+		{
+			name:         "negative value is rejected",
+			body:         `{"sku":"SKU001","name":"Keyboard","price":100,"minimum_stock":-1}`,
+			wantStatus:   http.StatusBadRequest,
+			wantResponse: `"message":"Invalid product"`,
+		},
+		{
+			name:         "non-integer value is rejected",
+			body:         `{"sku":"SKU001","name":"Keyboard","price":100,"minimum_stock":"5"}`,
+			wantStatus:   http.StatusBadRequest,
+			wantResponse: `"message":"Invalid JSON request"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &fakeProductRepository{storedMinimumStock: 8, storedQuantity: 4}
+			handler := newTestHandler(repo)
+
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/products/1", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+
+			handler.Update(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), tt.wantResponse) {
+				t.Errorf("body = %s, want it to contain %s", rec.Body.String(), tt.wantResponse)
+			}
+
+			if tt.wantStatus != http.StatusOK {
+				if repo.updatedProduct != nil {
+					t.Fatal("repository Update must not be called for a rejected request")
+				}
+				return
+			}
+			if repo.updatedProduct == nil {
+				t.Fatal("repository Update was not called")
+			}
+			switch {
+			case tt.wantArg == nil && repo.updateMinimumStock != nil:
+				t.Errorf("repository received minimumStock %d, want nil", *repo.updateMinimumStock)
+			case tt.wantArg != nil && repo.updateMinimumStock == nil:
+				t.Errorf("repository received nil minimumStock, want %d", *tt.wantArg)
+			case tt.wantArg != nil && *repo.updateMinimumStock != *tt.wantArg:
+				t.Errorf("repository received minimumStock %d, want %d", *repo.updateMinimumStock, *tt.wantArg)
+			}
+			if !strings.Contains(rec.Body.String(), `"quantity":4`) {
+				t.Errorf("body = %s, want stored quantity 4", rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestCreateMinimumStock covers the optional POST field: missing or null
+// means 0, a value is passed through, and a negative value is rejected.
+func TestCreateMinimumStock(t *testing.T) {
+	tests := []struct {
+		name         string
+		body         string
+		wantStatus   int
+		wantStored   int
+		wantResponse string
+	}{
+		{"missing means zero", `{"sku":"SKU010","name":"Mouse","price":25,"quantity":3}`, http.StatusCreated, 0, `"minimum_stock":0`},
+		{"null means zero", `{"sku":"SKU010","name":"Mouse","price":25,"quantity":3,"minimum_stock":null}`, http.StatusCreated, 0, `"minimum_stock":0`},
+		{"explicit zero", `{"sku":"SKU010","name":"Mouse","price":25,"quantity":3,"minimum_stock":0}`, http.StatusCreated, 0, `"minimum_stock":0`},
+		{"positive value", `{"sku":"SKU010","name":"Mouse","price":25,"quantity":3,"minimum_stock":2}`, http.StatusCreated, 2, `"minimum_stock":2`},
+		{"negative value is rejected", `{"sku":"SKU010","name":"Mouse","price":25,"quantity":3,"minimum_stock":-1}`, http.StatusBadRequest, 0, `"message":"Invalid product"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &fakeProductRepository{createID: 10}
+			handler := newTestHandler(repo)
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/products", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+
+			handler.Create(rec, withTestUser(req))
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), tt.wantResponse) {
+				t.Errorf("body = %s, want it to contain %s", rec.Body.String(), tt.wantResponse)
+			}
+			if tt.wantStatus != http.StatusCreated {
+				if repo.createdProduct != nil {
+					t.Fatal("repository Create must not be called for a rejected request")
+				}
+				return
+			}
+			if repo.createdProduct == nil {
+				t.Fatal("repository Create was not called")
+			}
+			if repo.createdProduct.MinimumStock != tt.wantStored {
+				t.Errorf("repository received minimum stock %d, want %d", repo.createdProduct.MinimumStock, tt.wantStored)
+			}
+		})
+	}
+}
+
+func intPtr(v int) *int { return &v }
+
 func TestDelete(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -749,7 +941,7 @@ func TestDelete(t *testing.T) {
 			name:       "product not found",
 			method:     http.MethodDelete,
 			path:       "/api/v1/products/99",
-			deleteErr:  domain.ErrProductNotFound,
+			deleteErr:  repository.ErrProductNotFound,
 			wantStatus: http.StatusNotFound,
 			wantBody:   `"message":"Product not found"`,
 		},
@@ -882,7 +1074,7 @@ func TestStockIn(t *testing.T) {
 			method:     http.MethodPost,
 			path:       "/api/v1/products/1/stock-in",
 			body:       `{"quantity":10}`,
-			repoErr:    domain.ErrProductNotFound,
+			repoErr:    repository.ErrProductNotFound,
 			wantStatus: http.StatusNotFound,
 			wantBody:   `"message":"Product not found"`,
 		},
@@ -928,7 +1120,7 @@ func TestStockIn(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
-			handler.StockIn(rec, req)
+			handler.StockIn(rec, withTestUser(req))
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf(
@@ -1018,7 +1210,7 @@ func TestStockOut(t *testing.T) {
 			method:         http.MethodPost,
 			path:           "/api/v1/products/1/stock-out",
 			body:           `{"quantity":11}`,
-			repoErr:        domain.ErrInsufficientStock,
+			repoErr:        repository.ErrInsufficientStock,
 			wantStatus:     http.StatusConflict,
 			wantBodyString: "Insufficient stock",
 		},
@@ -1027,7 +1219,7 @@ func TestStockOut(t *testing.T) {
 			method:         http.MethodPost,
 			path:           "/api/v1/products/1/stock-out",
 			body:           `{"quantity":3}`,
-			repoErr:        domain.ErrProductNotFound,
+			repoErr:        repository.ErrProductNotFound,
 			wantStatus:     http.StatusNotFound,
 			wantBodyString: "Product not found",
 		},
@@ -1062,7 +1254,7 @@ func TestStockOut(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
-			handler.StockOut(rec, req)
+			handler.StockOut(rec, withTestUser(req))
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d; body = %s",
@@ -1072,6 +1264,126 @@ func TestStockOut(t *testing.T) {
 			if !strings.Contains(rec.Body.String(), tt.wantBodyString) {
 				t.Errorf("body = %q, want it to contain %q",
 					rec.Body.String(), tt.wantBodyString)
+			}
+		})
+	}
+}
+
+// TestStockChangesUseAuthenticatedActor covers how Create, StockIn and
+// StockOut obtain the actor: from the user AuthMiddleware put in the context,
+// passed unchanged to the repository; without a user the request is rejected
+// with 401 before any repository call.
+func TestStockChangesUseAuthenticatedActor(t *testing.T) {
+	product := func() *domain.Product {
+		return &domain.Product{ID: 1, SKU: "SKU001", Name: "Keyboard", Price: 100, Quantity: 10}
+	}
+
+	operations := []struct {
+		name       string
+		path       string
+		body       string
+		serve      func(h *ProductHandler) http.HandlerFunc
+		wantStatus int
+	}{
+		{"Create", "/api/v1/products", `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":5}`,
+			func(h *ProductHandler) http.HandlerFunc { return h.Create }, http.StatusCreated},
+		{"StockIn", "/api/v1/products/1/stock-in", `{"quantity":3}`,
+			func(h *ProductHandler) http.HandlerFunc { return h.StockIn }, http.StatusOK},
+		{"StockOut", "/api/v1/products/1/stock-out", `{"quantity":3}`,
+			func(h *ProductHandler) http.HandlerFunc { return h.StockOut }, http.StatusOK},
+	}
+
+	newRequest := func(path, body string) *http.Request {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		return req
+	}
+
+	for _, op := range operations {
+		t.Run(op.name+" without authenticated user", func(t *testing.T) {
+			repo := &fakeProductRepository{createID: 9, stockInProduct: product(), stockOutProduct: product()}
+			rec := httptest.NewRecorder()
+
+			op.serve(newTestHandler(repo))(rec, newRequest(op.path, op.body))
+
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401; body = %s", rec.Code, rec.Body.String())
+			}
+			wantBody := `{"success":false,"message":"authentication required","data":null}`
+			if got := strings.TrimSpace(rec.Body.String()); got != wantBody {
+				t.Errorf("body = %s, want %s", got, wantBody)
+			}
+			if repo.stockCalls != 0 {
+				t.Fatal("repository must not be called without an authenticated user")
+			}
+		})
+
+		t.Run(op.name+" passes the authenticated user as actor", func(t *testing.T) {
+			repo := &fakeProductRepository{createID: 9, stockInProduct: product(), stockOutProduct: product()}
+			rec := httptest.NewRecorder()
+
+			op.serve(newTestHandler(repo))(rec, withUserID(newRequest(op.path, op.body), 7))
+
+			if rec.Code != op.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, op.wantStatus, rec.Body.String())
+			}
+			if repo.stockCalls != 1 || repo.actorID != 7 {
+				t.Errorf("repository calls = %d with actor %d, want 1 call with actor 7", repo.stockCalls, repo.actorID)
+			}
+		})
+
+		t.Run(op.name+" maps a vanished actor to 401", func(t *testing.T) {
+			repo := &fakeProductRepository{
+				createErr:   repository.ErrInvalidActor,
+				stockInErr:  repository.ErrInvalidActor,
+				stockOutErr: repository.ErrInvalidActor,
+			}
+			rec := httptest.NewRecorder()
+
+			op.serve(newTestHandler(repo))(rec, withTestUser(newRequest(op.path, op.body)))
+
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401; body = %s", rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), `"message":"authentication required"`) {
+				t.Errorf("body = %s, want authentication required", rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestStockChangesKeepInputErrorsBeforeAuth keeps the existing error order:
+// malformed requests are rejected with 400 even when no user is present.
+func TestStockChangesKeepInputErrorsBeforeAuth(t *testing.T) {
+	tests := []struct {
+		name  string
+		path  string
+		body  string
+		serve func(h *ProductHandler) http.HandlerFunc
+		want  string
+	}{
+		{"Create invalid JSON", "/api/v1/products", `{"sku":`,
+			func(h *ProductHandler) http.HandlerFunc { return h.Create }, `"message":"Invalid JSON request"`},
+		{"StockIn invalid ID", "/api/v1/products/abc/stock-in", `{"quantity":3}`,
+			func(h *ProductHandler) http.HandlerFunc { return h.StockIn }, `"message":"invalid product ID"`},
+		{"StockOut invalid JSON", "/api/v1/products/1/stock-out", `{"quantity":`,
+			func(h *ProductHandler) http.HandlerFunc { return h.StockOut }, `"message":"Invalid JSON body"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &fakeProductRepository{}
+			req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+
+			tt.serve(newTestHandler(repo))(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400; body = %s", rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), tt.want) {
+				t.Errorf("body = %s, want it to contain %s", rec.Body.String(), tt.want)
 			}
 		})
 	}

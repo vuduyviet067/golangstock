@@ -4,6 +4,8 @@ export interface Product {
   name: string;
   price: number;
   quantity: number;
+  // Low-stock threshold: a product is low on stock when 0 < quantity <= minimum_stock.
+  minimum_stock: number;
 }
 
 export interface ProductListParams {
@@ -19,6 +21,8 @@ export interface CreateProductInput {
   name: string;
   price: number;
   quantity: number;
+  // Optional; the API defaults it to 0.
+  minimum_stock?: number;
 }
 
 // quantity is intentionally absent: stock changes only via stock-in/stock-out,
@@ -27,6 +31,8 @@ export interface UpdateProductInput {
   sku: string;
   name: string;
   price: number;
+  // Optional; when omitted the API keeps the current value.
+  minimum_stock?: number;
 }
 
 export interface StockAdjustmentInput {

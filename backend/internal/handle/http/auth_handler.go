@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"gostock/internal/domain"
 	"gostock/internal/dto"
 	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
@@ -205,11 +204,11 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		if logoutErr != nil {
 			switch {
 			case errors.Is(logoutErr, usecase.ErrInvalidSession),
-				errors.Is(logoutErr, domain.ErrRefreshTokenNotFound),
-				errors.Is(logoutErr, domain.ErrRefreshTokenRevoked),
-				errors.Is(logoutErr, domain.ErrRefreshTokenExpired),
-				errors.Is(logoutErr, domain.ErrInvalidRefreshToken),
-				errors.Is(logoutErr, domain.ErrRefreshTokenReused):
+				errors.Is(logoutErr, usecase.ErrRefreshTokenNotFound),
+				errors.Is(logoutErr, usecase.ErrRefreshTokenRevoked),
+				errors.Is(logoutErr, usecase.ErrRefreshTokenExpired),
+				errors.Is(logoutErr, usecase.ErrInvalidRefreshToken),
+				errors.Is(logoutErr, usecase.ErrRefreshTokenReused):
 				// Idempotent: token already invalid, revoked, expired, reused or missing is considered successful logout
 			default:
 				// Infrastructure or database failure: report 500 error, but cookies were already cleared

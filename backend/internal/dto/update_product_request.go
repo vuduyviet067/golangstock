@@ -10,4 +10,7 @@ type UpdateProductRequest struct {
 	Price float64 `json:"price"`
 
 	Quantity json.RawMessage `json:"quantity"`
+
+	// MinimumStock is optional: omitted or null keeps the stored value.
+	MinimumStock *int `json:"minimum_stock"`
 }

@@ -21,12 +21,11 @@ const (
 	testProdSecret = "production-secret-with-at-least-32-bytes-long!"
 )
 
-// configEnvVars lists every environment variable read by this package.
-// TestConfigEnvVars_MatchesSource keeps it in sync with the non-test source files.
 var configEnvVars = []string{
 	"APP_ENV",
 	"ENV",
 	"DATABASE_URL",
+	"EXPECTED_DATABASE_NAME",
 	"HTTP_PORT",
 	"JWT_SECRET",
 	"JWT_ISSUER",
@@ -1370,4 +1369,79 @@ func TestLoadDatabaseURL(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoadExpectedDatabaseName(t *testing.T) {
+	t.Run("unset means no check", func(t *testing.T) {
+		clearConfigEnv(t)
+		got, err := LoadExpectedDatabaseName()
+		if err != nil || got != "" {
+			t.Fatalf("LoadExpectedDatabaseName() = %q, %v; want \"\", nil", got, err)
+		}
+	})
+
+	t.Run("valid name is returned unchanged", func(t *testing.T) {
+		for _, name := range []string{"gostock_ui_test", "GoStock-UI"} {
+			clearConfigEnv(t)
+			t.Setenv("EXPECTED_DATABASE_NAME", name)
+			got, err := LoadExpectedDatabaseName()
+			if err != nil || got != name {
+				t.Fatalf("LoadExpectedDatabaseName() = %q, %v; want %q, nil", got, err, name)
+			}
+		}
+	})
+
+	invalid := []struct {
+		name    string
+		value   string
+		wantErr string
+	}{
+		{"set but empty", "", "set but empty"},
+		{"only whitespace", " \t ", "set but empty"},
+		{"leading whitespace", " gostock_ui_test", "leading or trailing whitespace"},
+		{"trailing whitespace", "gostock_ui_test\n", "leading or trailing whitespace"},
+	}
+	for _, tc := range invalid {
+		t.Run(tc.name+" is rejected", func(t *testing.T) {
+			clearConfigEnv(t)
+			t.Setenv("EXPECTED_DATABASE_NAME", tc.value)
+			got, err := LoadExpectedDatabaseName()
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("LoadExpectedDatabaseName() = %q, %v; want an error containing %q", got, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestConfig_ExpectedDatabaseName(t *testing.T) {
+	t.Run("unset leaves the check off", func(t *testing.T) {
+		setBaseEnv(t)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.ExpectedDatabaseName != "" {
+			t.Errorf("ExpectedDatabaseName = %q, want empty", cfg.ExpectedDatabaseName)
+		}
+	})
+
+	t.Run("set value reaches AppConfig", func(t *testing.T) {
+		setBaseEnv(t)
+		t.Setenv("EXPECTED_DATABASE_NAME", "gostock_ui_test")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.ExpectedDatabaseName != "gostock_ui_test" {
+			t.Errorf("ExpectedDatabaseName = %q, want %q", cfg.ExpectedDatabaseName, "gostock_ui_test")
+		}
+	})
+
+	t.Run("invalid value fails Load", func(t *testing.T) {
+		setBaseEnv(t)
+		t.Setenv("EXPECTED_DATABASE_NAME", "  ")
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "EXPECTED_DATABASE_NAME") {
+			t.Fatalf("Load() error = %v, want an EXPECTED_DATABASE_NAME error", err)
+		}
+	})
 }

@@ -15,16 +15,22 @@ func TestProductFromCreateRequest(t *testing.T) {
 
 	want := domain.Product{SKU: "SKU001", Name: "Keyboard", Price: 100.5, Quantity: 5}
 	if got != want {
-		t.Fatalf("productFromCreateRequest = %+v, want %+v (client ID must be ignored)", got, want)
+		t.Fatalf("productFromCreateRequest = %+v, want %+v (client ID must be ignored, missing minimum stock is 0)", got, want)
+	}
+
+	minimum := 3
+	req.MinimumStock = &minimum
+	if got := productFromCreateRequest(req); got.MinimumStock != 3 {
+		t.Fatalf("productFromCreateRequest minimum stock = %d, want 3", got.MinimumStock)
 	}
 }
 
 func TestToProductResponse(t *testing.T) {
-	product := domain.Product{ID: 7, SKU: "SKU007", Name: "Keyboard", Price: 99.5, Quantity: 5}
+	product := domain.Product{ID: 7, SKU: "SKU007", Name: "Keyboard", Price: 99.5, Quantity: 5, MinimumStock: 2}
 
 	got := toProductResponse(product)
 
-	want := dto.ProductResponse{ID: 7, SKU: "SKU007", Name: "Keyboard", Price: 99.5, Quantity: 5}
+	want := dto.ProductResponse{ID: 7, SKU: "SKU007", Name: "Keyboard", Price: 99.5, Quantity: 5, MinimumStock: 2}
 	if got != want {
 		t.Fatalf("toProductResponse = %+v, want %+v", got, want)
 	}
@@ -53,11 +59,11 @@ func TestToProductResponses(t *testing.T) {
 
 	got := toProductResponses([]domain.Product{
 		{ID: 1, SKU: "SKU001", Name: "Mouse", Price: 25, Quantity: 0},
-		{ID: 2, SKU: "SKU002", Name: "Monitor", Price: 199.99, Quantity: 12},
+		{ID: 2, SKU: "SKU002", Name: "Monitor", Price: 199.99, Quantity: 12, MinimumStock: 4},
 	})
 	want := []dto.ProductResponse{
 		{ID: 1, SKU: "SKU001", Name: "Mouse", Price: 25, Quantity: 0},
-		{ID: 2, SKU: "SKU002", Name: "Monitor", Price: 199.99, Quantity: 12},
+		{ID: 2, SKU: "SKU002", Name: "Monitor", Price: 199.99, Quantity: 12, MinimumStock: 4},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("toProductResponses = %+v, want %+v", got, want)

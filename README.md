@@ -182,6 +182,29 @@ Example:
 GET /api/v1/products?q=keyboard&page=1&limit=10&sortBy=name&order=asc
 ```
 
+### Dashboard
+
+| Method | Endpoint | Description | Authorization |
+|---|---|---|---|
+| GET | `/api/v1/dashboard/summary` | Summary cards and inventory status breakdown | User or Admin |
+| GET | `/api/v1/dashboard/stock-movements` | Stock moved in and out per day or month | User or Admin |
+
+The stock movement chart accepts these optional query parameters:
+
+- `from`, `to`: calendar dates in `YYYY-MM-DD` format, inclusive. `to` defaults to today in `tz`; `from` defaults to 29 days before `to`.
+- `granularity`: `auto` (default), `day` or `month`. `auto` groups by day for ranges up to 62 days and by month beyond. A range may span at most 92 days by day and 731 days by month.
+- `tz`: the time zone used for the date range and the buckets. Defaults to `UTC`. Accepted values are `UTC` and IANA names of the form `Area/Location`, such as `Asia/Ho_Chi_Minh` or `America/New_York`. Abbreviations such as `CET`, `EST` or `GMT` are rejected.
+
+The range covers whole local days, from 00:00 on `from` to the end of `to` in `tz`, including days shortened or lengthened by daylight saving time. Stock-out quantities are positive numbers, and movements of deleted products are included.
+
+Query parameter values must be URL-encoded. In particular, `+` in a time zone name must be sent as `%2B`, because a bare `+` in a query string is decoded as a space:
+
+```http
+GET /api/v1/dashboard/stock-movements?from=2026-11-01&to=2026-11-30&tz=Etc/GMT%2B7
+```
+
+Note that `Etc/GMT+7` is seven hours behind UTC (POSIX sign convention).
+
 ### User administration
 
 All user-management endpoints require the Admin role.
@@ -355,6 +378,7 @@ The application initializes its dependencies, connects to PostgreSQL, starts the
 | Variable | Required | Description |
 |---|---|---|
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `EXPECTED_DATABASE_NAME` | No | When set, the API server, `createadmin` and `resetadmin` check `current_database()` on their own connection right after connecting and stop if it differs, before serving requests or asking for credentials. If set, it must not be empty or have leading or trailing whitespace |
 | `APP_ENV` | No | Application environment; defaults to `development` |
 | `ENV` | No | Fallback environment variable when `APP_ENV` is unset |
 | `HTTP_PORT` | No | HTTP port; defaults to `8080` |
@@ -472,7 +496,7 @@ The test suite covers configuration validation, domain and use-case behavior, HT
 PostgreSQL integration tests use a dedicated test database configured by `TEST_DATABASE_URL`. They never read `DATABASE_URL`, so loading `.env` cannot point them at the development database.
 
 - If `TEST_DATABASE_URL` is not set, integration tests are skipped. A skipped integration test is not a passed test.
-- Before any test writes data, it checks `current_database()`. The test fails immediately unless the database name ends with `_test`.
+- Before any test writes data, it checks `current_database()`. The test fails immediately unless the database is named exactly `gostock_test`. Any other name fails, including `gostock_ui_test`, which is reserved for manual UI testing.
 
 Integration tests insert and delete products and users and create refresh tokens. Use a database that you are allowed to modify, never a shared or production database.
 
@@ -494,6 +518,16 @@ To set the variable for a single run without exporting it:
 ```bash
 TEST_DATABASE_URL='postgres://postgres:YOUR_PASSWORD@localhost:5432/gostock_test?sslmode=disable' go test -count=1 ./...
 ```
+
+### Run the application against the UI test database
+
+Manual UI testing uses a separate database, `gostock_ui_test`. It is never the development database and never `gostock_test`. Keep its connection string in its own variable, `GOSTOCK_UI_DATABASE_URL`. Start the API with `DATABASE_URL` set explicitly from that variable, and set `EXPECTED_DATABASE_NAME` so the server refuses to start on any other database. This applies even when the shell already holds a development `DATABASE_URL`:
+
+```bash
+DATABASE_URL="${GOSTOCK_UI_DATABASE_URL:?not set}" EXPECTED_DATABASE_NAME=gostock_ui_test go run .
+```
+
+On success the server logs `database preflight passed` with the database name. On any other database it exits with `database preflight: connected to "…", expected "gostock_ui_test"` before opening its HTTP port. Use the same two variables for `go run ./cmd/createadmin` and `go run ./cmd/resetadmin`.
 
 ## Current Scope and Future Improvements
 

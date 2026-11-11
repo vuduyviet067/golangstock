@@ -129,7 +129,7 @@ type spyProductRepoForContentType struct {
 	product        *domain.Product
 }
 
-func (s *spyProductRepoForContentType) Create(ctx context.Context, p *domain.Product) error {
+func (s *spyProductRepoForContentType) Create(ctx context.Context, p *domain.Product, actorID int64) error {
 	s.createCalled = true
 	p.ID = 100
 	return nil
@@ -143,18 +143,18 @@ func (s *spyProductRepoForContentType) GetByID(ctx context.Context, id int64) (*
 func (s *spyProductRepoForContentType) List(ctx context.Context, query string, page, limit int, sortBy, order string) ([]domain.Product, int64, error) {
 	return nil, 0, nil
 }
-func (s *spyProductRepoForContentType) Update(ctx context.Context, p *domain.Product) error {
+func (s *spyProductRepoForContentType) Update(ctx context.Context, p *domain.Product, minimumStock *int) error {
 	s.updateCalled = true
 	return nil
 }
 func (s *spyProductRepoForContentType) Delete(ctx context.Context, id int64) error {
 	return nil
 }
-func (s *spyProductRepoForContentType) StockIn(ctx context.Context, id int64, qty int) (*domain.Product, error) {
+func (s *spyProductRepoForContentType) StockIn(ctx context.Context, id int64, qty int, actorID int64) (*domain.Product, error) {
 	s.stockInCalled = true
 	return &domain.Product{ID: id, Quantity: 20}, nil
 }
-func (s *spyProductRepoForContentType) StockOut(ctx context.Context, id int64, qty int) (*domain.Product, error) {
+func (s *spyProductRepoForContentType) StockOut(ctx context.Context, id int64, qty int, actorID int64) (*domain.Product, error) {
 	s.stockOutCalled = true
 	return &domain.Product{ID: id, Quantity: 5}, nil
 }
@@ -206,7 +206,7 @@ func TestHandlers_ContentMediaTypeValidation(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
 		rec := httptest.NewRecorder()
 
-		handler.StockIn(rec, req)
+		handler.StockIn(rec, withTestUser(req))
 
 		if !repo.stockInCalled {
 			t.Fatal("repository StockIn must be invoked when Content-Type is valid")

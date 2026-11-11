@@ -25,23 +25,41 @@ func NewProductHandler(uc *usecase.ProductUseCase) *ProductHandler {
 
 // productFromCreateRequest maps a create request to a new product. The request
 // ID is accepted for backward compatibility but ignored: the database assigns it.
+// An omitted or null minimum_stock means 0 (no threshold).
 func productFromCreateRequest(req dto.CreateProductRequest) domain.Product {
-	return domain.Product{
+	product := domain.Product{
 		SKU:      req.SKU,
 		Name:     req.Name,
 		Price:    req.Price,
 		Quantity: req.Quantity,
 	}
+	if req.MinimumStock != nil {
+		product.MinimumStock = *req.MinimumStock
+	}
+	return product
 }
 
 func toProductResponse(p domain.Product) dto.ProductResponse {
 	return dto.ProductResponse{
-		ID:       p.ID,
-		SKU:      p.SKU,
-		Name:     p.Name,
-		Price:    p.Price,
-		Quantity: p.Quantity,
+		ID:           p.ID,
+		SKU:          p.SKU,
+		Name:         p.Name,
+		Price:        p.Price,
+		Quantity:     p.Quantity,
+		MinimumStock: p.MinimumStock,
 	}
+}
+
+// currentActorID returns the ID of the user set by AuthMiddleware. Stock
+// changes are recorded against this user. If no user is present it writes
+// 401 and returns false; behind AuthMiddleware this does not happen.
+func currentActorID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	user, ok := CurrentUser(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "authentication required")
+		return 0, false
+	}
+	return user.ID, true
 }
 
 // toProductResponsePtr keeps a nil product as a JSON null.
@@ -167,7 +185,12 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	product := productFromCreateRequest(req)
 
-	if err := h.useCase.Create(r.Context(), &product); err != nil {
+	actorID, ok := currentActorID(w, r)
+	if !ok {
+		return
+	}
+
+	if err := h.useCase.Create(r.Context(), &product, actorID); err != nil {
 		WriteError(w, r, err)
 		return
 	}
@@ -231,7 +254,8 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Price: req.Price,
 	}
 
-	if err := h.useCase.Update(r.Context(), &product); err != nil {
+	// An omitted or null minimum_stock keeps the stored threshold.
+	if err := h.useCase.Update(r.Context(), &product, req.MinimumStock); err != nil {
 		WriteError(w, r, err)
 		return
 	}
@@ -309,7 +333,12 @@ func (h *ProductHandler) StockIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	product, err := h.useCase.StockIn(r.Context(), id, req.Quantity)
+	actorID, ok := currentActorID(w, r)
+	if !ok {
+		return
+	}
+
+	product, err := h.useCase.StockIn(r.Context(), id, req.Quantity, actorID)
 	if err != nil {
 		WriteError(w, r, err)
 		return
@@ -361,7 +390,12 @@ func (h *ProductHandler) StockOut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	product, err := h.useCase.StockOut(r.Context(), id, req.Quantity)
+	actorID, ok := currentActorID(w, r)
+	if !ok {
+		return
+	}
+
+	product, err := h.useCase.StockOut(r.Context(), id, req.Quantity, actorID)
 	if err != nil {
 		WriteError(w, r, err)
 		return
