@@ -230,9 +230,8 @@ func TestRegisterSuccess(t *testing.T) {
 	if user.Role != "user" {
 		t.Errorf("Role = %q, want %q", user.Role, "user")
 	}
-	if user.PasswordHash != "" {
-		t.Error("Register() must not return password hash")
-	}
+	// Register must not return the password or its hash.
+	assertNoUserSecrets(t, user, "password123", users.created.PasswordHash)
 	if users.created == nil {
 		t.Fatal("expected repository Create to be called")
 	}
@@ -319,9 +318,8 @@ func TestLoginSuccess(t *testing.T) {
 	if result.User.ID != 1 {
 		t.Errorf("User.ID = %d, want 1", result.User.ID)
 	}
-	if result.User.PasswordHash != "" {
-		t.Error("returned user must not expose password hash")
-	}
+	// The response user must not expose the password hash or the tokens.
+	assertNoUserSecrets(t, result.User, string(passwordHash), password, result.AccessToken, result.RefreshToken)
 	if result.AccessToken != "jwt-test-token" {
 		t.Errorf("AccessToken = %q, want 'jwt-test-token'", result.AccessToken)
 	}

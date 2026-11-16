@@ -13,9 +13,6 @@ import (
 
 const EnvVar = "TEST_DATABASE_URL"
 
-// RequiredName is the only database integration tests may use. An exact name,
-// not just a "_test" suffix, keeps them off every other database, including
-// gostock_ui_test, which is reserved for manual UI testing.
 const RequiredName = "gostock_test"
 
 func Open(t testing.TB) *sql.DB {

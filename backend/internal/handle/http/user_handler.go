@@ -6,21 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"gostock/internal/domain"
 	"gostock/internal/dto"
 	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
 )
-
-func toUserResponse(u domain.User) dto.UserResponse {
-	return dto.UserResponse{
-		ID:        u.ID,
-		Email:     u.Email,
-		Role:      u.Role,
-		CreatedAt: u.CreatedAt,
-		UpdatedAt: u.UpdatedAt,
-	}
-}
 
 type UserHandler struct {
 	useCase *usecase.UserUseCase
@@ -67,12 +56,7 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := make([]dto.UserResponse, len(users))
-	for i, u := range users {
-		items[i] = toUserResponse(u)
-	}
-
-	response.Paginated(w, "Users retrieved successfully", items, page, limit, total)
+	response.Paginated(w, "Users retrieved successfully", users, page, limit, total)
 }
 
 func (h *UserHandler) GetByID(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +84,7 @@ func (h *UserHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.Success(w, http.StatusOK, "User retrieved successfully", toUserResponse(*user))
+	response.Success(w, http.StatusOK, "User retrieved successfully", user)
 }
 
 func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -145,5 +129,5 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.Success(w, http.StatusOK, "User updated successfully", toUserResponse(*updatedUser))
+	response.Success(w, http.StatusOK, "User updated successfully", updatedUser)
 }

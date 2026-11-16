@@ -4,7 +4,8 @@ import (
 	"context"
 	"math"
 
-	"gostock/internal/domain"
+	"gostock/internal/dto"
+	"gostock/internal/mapper"
 	"gostock/internal/repository"
 )
 
@@ -40,11 +41,14 @@ func validatePagination(page, limit int) error {
 // ListByProduct returns one page of an existing product's movements, newest
 // first, and their total. A missing product, including a deleted one, is
 // ErrProductNotFound; its history stays available through List.
+//
+// The page is returned as response DTOs in the repository's order, never nil
+// (an empty page is []), with the repository's total unchanged.
 func (uc *StockMovementUseCase) ListByProduct(
 	ctx context.Context,
 	productID int64,
 	page, limit int,
-) ([]domain.StockMovement, int64, error) {
+) ([]dto.StockMovementResponse, int64, error) {
 	if productID <= 0 {
 		return nil, 0, ErrInvalidID
 	}
@@ -60,16 +64,16 @@ func (uc *StockMovementUseCase) ListByProduct(
 	if err != nil {
 		return nil, 0, fromRepository(err)
 	}
-	return movements, total, nil
+	return mapper.ToStockMovementResponses(movements), total, nil
 }
 
 // List returns one page of all movements, including those of deleted
 // products, newest first, and their total. Access is restricted to admins by
-// the HTTP router.
+// the HTTP router. The result has the same form as ListByProduct's.
 func (uc *StockMovementUseCase) List(
 	ctx context.Context,
 	page, limit int,
-) ([]domain.StockMovement, int64, error) {
+) ([]dto.StockMovementResponse, int64, error) {
 	if err := validatePagination(page, limit); err != nil {
 		return nil, 0, err
 	}
@@ -78,5 +82,5 @@ func (uc *StockMovementUseCase) List(
 	if err != nil {
 		return nil, 0, fromRepository(err)
 	}
-	return movements, total, nil
+	return mapper.ToStockMovementResponses(movements), total, nil
 }

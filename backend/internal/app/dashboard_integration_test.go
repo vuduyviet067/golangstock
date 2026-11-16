@@ -215,22 +215,22 @@ func TestDashboard_EndToEnd(t *testing.T) {
 		t.Fatalf("independent summary: %v", err)
 	}
 
-	for _, token := range []string{"user", "admin"} {
+	{
 		var got struct {
 			Success bool                         `json:"success"`
 			Data    dto.DashboardSummaryResponse `json:"data"`
 		}
-		rec := call(http.MethodGet, "/api/v1/dashboard/summary", token, "", http.StatusOK)
+		rec := call(http.MethodGet, "/api/v1/dashboard/summary", "admin", "", http.StatusOK)
 		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 			t.Fatalf("decode summary: %v", err)
 		}
 		if !got.Success || fmt.Sprint(got.Data) != fmt.Sprint(wantSummary) {
-			t.Errorf("%s summary = %+v, want %+v", token, got.Data, wantSummary)
+			t.Errorf("summary = %+v, want %+v", got.Data, wantSummary)
 		}
 		if got.Data.TotalProducts != independent.TotalProducts || got.Data.TotalStock != independent.TotalStock ||
 			got.Data.LowStockProducts != independent.LowStockProducts || got.Data.OutOfStockProducts != independent.OutOfStockProducts ||
 			got.Data.StatusBreakdown[0].Count != normal {
-			t.Errorf("%s summary %+v disagrees with independent SQL %+v (normal %d)", token, got.Data, independent, normal)
+			t.Errorf("summary %+v disagrees with independent SQL %+v (normal %d)", got.Data, independent, normal)
 		}
 	}
 
@@ -277,23 +277,23 @@ func TestDashboard_EndToEnd(t *testing.T) {
 		return got.Data
 	}
 
-	for _, token := range []string{"user", "admin"} {
-		c := getChart(path, token)
+	{
+		c := getChart(path, "admin")
 		if c.From != "2026-11-01" || c.To != "2026-11-04" || c.Granularity != "day" || c.Timezone != "Asia/Ho_Chi_Minh" {
-			t.Errorf("%s chart header = %s..%s %s %s", token, c.From, c.To, c.Granularity, c.Timezone)
+			t.Errorf("chart header = %s..%s %s %s", c.From, c.To, c.Granularity, c.Timezone)
 		}
 		if fmt.Sprint(c.Points) != fmt.Sprint(wantPoints) {
-			t.Errorf("%s chart points = %+v, want %+v", token, c.Points, wantPoints)
+			t.Errorf("chart points = %+v, want %+v", c.Points, wantPoints)
 		}
 		for _, p := range c.Points {
 			ind := independentPoints[p.Period] // missing means a zero bucket
 			ind.Period = p.Period
 			if p != ind {
-				t.Errorf("%s chart point %+v disagrees with independent SQL %+v", token, p, ind)
+				t.Errorf("chart point %+v disagrees with independent SQL %+v", p, ind)
 			}
 		}
 		if c.Totals.StockIn != 12 || c.Totals.StockOut != 13 {
-			t.Errorf("%s chart totals = %+v, want in 12 / out 13", token, c.Totals)
+			t.Errorf("chart totals = %+v, want in 12 / out 13", c.Totals)
 		}
 	}
 
@@ -326,7 +326,7 @@ func TestDashboard_EndToEnd(t *testing.T) {
 		},
 	}
 	for _, m := range monthly {
-		c := getChart(m.path, "user")
+		c := getChart(m.path, "admin")
 		if c.From != m.wantFrom || c.To != "2026-11-30" || c.Granularity != "month" || c.Timezone != "Asia/Ho_Chi_Minh" {
 			t.Errorf("%s: header = %s..%s %s %s", m.name, c.From, c.To, c.Granularity, c.Timezone)
 		}
@@ -339,7 +339,7 @@ func TestDashboard_EndToEnd(t *testing.T) {
 	}
 
 	// Only to: the 30 days ending on 4 Nov, i.e. from 6 Oct.
-	c := getChart("/api/v1/dashboard/stock-movements?to=2026-11-04&tz=Asia/Ho_Chi_Minh", "user")
+	c := getChart("/api/v1/dashboard/stock-movements?to=2026-11-04&tz=Asia/Ho_Chi_Minh", "admin")
 	if c.From != "2026-10-06" || c.To != "2026-11-04" || c.Granularity != "day" || len(c.Points) != 30 {
 		t.Errorf("only to: %s..%s %s with %d points, want 2026-10-06..2026-11-04 day with 30", c.From, c.To, c.Granularity, len(c.Points))
 	} else {
@@ -358,10 +358,28 @@ func TestDashboard_EndToEnd(t *testing.T) {
 		t.Errorf("only to: totals = %+v, want in 21 / out 13", c.Totals)
 	}
 
-	// Invalid parameters and authentication through the real router.
-	call(http.MethodGet, "/api/v1/dashboard/stock-movements?from=2026-11-04&to=2026-11-03", "user", "", http.StatusBadRequest)
-	call(http.MethodGet, "/api/v1/dashboard/stock-movements?from=2026-11-01&to=2026-11-04&tz=CET", "user", "", http.StatusBadRequest)
-	call(http.MethodGet, "/api/v1/dashboard/summary", "", "", http.StatusUnauthorized)
+	// Invalid parameters and methods from an admin.
+	call(http.MethodGet, "/api/v1/dashboard/stock-movements?from=2026-11-04&to=2026-11-03", "admin", "", http.StatusBadRequest)
+	call(http.MethodGet, "/api/v1/dashboard/stock-movements?from=2026-11-01&to=2026-11-04&tz=CET", "admin", "", http.StatusBadRequest)
+	call(http.MethodPost, "/api/v1/dashboard/summary", "admin", "", http.StatusMethodNotAllowed)
+	call(http.MethodPost, "/api/v1/dashboard/stock-movements", "admin", "", http.StatusMethodNotAllowed)
+
+	// Authorization through the real router: both endpoints are admin only,
+	// and the role is checked before the method and the query.
+	for _, endpoint := range []string{"/api/v1/dashboard/summary", path} {
+		call(http.MethodGet, endpoint, "", "", http.StatusUnauthorized)
+		call(http.MethodGet, endpoint, "bogus", "", http.StatusUnauthorized)
+		rec := call(http.MethodGet, endpoint, "user", "", http.StatusForbidden)
+		if !strings.Contains(rec.Body.String(), `"message":"forbidden: admin role required"`) {
+			t.Errorf("user GET %s: body = %s", endpoint, rec.Body.String())
+		}
+		if strings.Contains(rec.Body.String(), `"data":{`) {
+			t.Errorf("user GET %s leaked dashboard data: %s", endpoint, rec.Body.String())
+		}
+		call(http.MethodPost, endpoint, "user", "", http.StatusForbidden)
+	}
+	call(http.MethodGet, "/api/v1/dashboard/stock-movements?from=2026-11-04&to=2026-11-03", "user", "", http.StatusForbidden)
+	call(http.MethodGet, "/api/v1/dashboard/stock-movements?tz=CET", "user", "", http.StatusForbidden)
 
 	// Reading the dashboard changed nothing.
 	if m, p, s := readTable(); m != m0 || p != p0 || s != s0 {

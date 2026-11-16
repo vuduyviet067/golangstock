@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -48,13 +49,50 @@ func newTestDashboard(repo *fakeDashboardRepository, now time.Time) *DashboardUs
 	return uc
 }
 
+// Summary returns the response DTO: the cards, and a breakdown that always
+// lists normal, low_stock and out_of_stock in that order, zero counts
+// included.
 func TestDashboardSummary(t *testing.T) {
 	tests := []struct {
 		name    string
 		summary domain.InventorySummary
+		want    dto.DashboardSummaryResponse
 	}{
-		{"empty", domain.InventorySummary{}},
-		{"mixed", domain.InventorySummary{TotalProducts: 6, TotalStock: 40, Normal: 3, LowStock: 2, OutOfStock: 1}},
+		{
+			name:    "empty",
+			summary: domain.InventorySummary{},
+			want: dto.DashboardSummaryResponse{
+				StatusBreakdown: []dto.InventoryStatusCount{
+					{Status: "normal", Count: 0},
+					{Status: "low_stock", Count: 0},
+					{Status: "out_of_stock", Count: 0},
+				},
+			},
+		},
+		{
+			name:    "mixed",
+			summary: domain.InventorySummary{TotalProducts: 6, TotalStock: 40, Normal: 3, LowStock: 2, OutOfStock: 1},
+			want: dto.DashboardSummaryResponse{
+				TotalProducts: 6, TotalStock: 40, LowStockProducts: 2, OutOfStockProducts: 1,
+				StatusBreakdown: []dto.InventoryStatusCount{
+					{Status: "normal", Count: 3},
+					{Status: "low_stock", Count: 2},
+					{Status: "out_of_stock", Count: 1},
+				},
+			},
+		},
+		{
+			name:    "one status only",
+			summary: domain.InventorySummary{TotalProducts: 4, TotalStock: 0, OutOfStock: 4},
+			want: dto.DashboardSummaryResponse{
+				TotalProducts: 4, TotalStock: 0, LowStockProducts: 0, OutOfStockProducts: 4,
+				StatusBreakdown: []dto.InventoryStatusCount{
+					{Status: "normal", Count: 0},
+					{Status: "low_stock", Count: 0},
+					{Status: "out_of_stock", Count: 4},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -63,8 +101,8 @@ func TestDashboardSummary(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Summary: %v", err)
 			}
-			if got != tt.summary {
-				t.Errorf("Summary = %+v, want %+v", got, tt.summary)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Summary = %+v, want %+v", got, tt.want)
 			}
 		})
 	}
@@ -74,16 +112,24 @@ func TestDashboardSummary_InconsistentCountsAreAnError(t *testing.T) {
 	uc := NewDashboardUseCase(&fakeDashboardRepository{
 		summary: domain.InventorySummary{TotalProducts: 5, Normal: 1, LowStock: 1, OutOfStock: 1},
 	})
-	if _, err := uc.Summary(context.Background()); !errors.Is(err, errInconsistentSummary) {
+	got, err := uc.Summary(context.Background())
+	if !errors.Is(err, errInconsistentSummary) {
 		t.Fatalf("error = %v, want errInconsistentSummary", err)
+	}
+	if !reflect.DeepEqual(got, dto.DashboardSummaryResponse{}) {
+		t.Errorf("Summary on error = %+v, want the zero value", got)
 	}
 }
 
 func TestDashboardSummary_RepositoryError(t *testing.T) {
 	dbErr := errors.New("connection reset")
 	uc := NewDashboardUseCase(&fakeDashboardRepository{summaryErr: dbErr})
-	if _, err := uc.Summary(context.Background()); !errors.Is(err, dbErr) {
+	got, err := uc.Summary(context.Background())
+	if !errors.Is(err, dbErr) {
 		t.Fatalf("error = %v, want the repository error", err)
+	}
+	if !reflect.DeepEqual(got, dto.DashboardSummaryResponse{}) {
+		t.Errorf("Summary on error = %+v, want the zero value", got)
 	}
 }
 
@@ -206,23 +252,48 @@ func TestStockMovementChart_FillsEveryDayAndTotals(t *testing.T) {
 		t.Fatalf("StockMovementChart: %v", err)
 	}
 
-	want := []domain.StockMovementBucket{
-		{Period: "2026-11-01"},
-		{Period: "2026-11-02", StockIn: 7, StockOut: 3},
-		{Period: "2026-11-03"},
-		{Period: "2026-11-04", StockOut: 5},
-		{Period: "2026-11-05"},
+	want := dto.StockMovementChartResponse{
+		From: "2026-11-01", To: "2026-11-05", Granularity: "day", Timezone: "UTC",
+		Points: []dto.StockMovementChartPoint{
+			{Period: "2026-11-01"},
+			{Period: "2026-11-02", StockIn: 7, StockOut: 3},
+			{Period: "2026-11-03"},
+			{Period: "2026-11-04", StockOut: 5},
+			{Period: "2026-11-05"},
+		},
+		Totals: dto.StockMovementChartTotals{StockIn: 7, StockOut: 8},
 	}
-	if len(chart.Points) != len(want) {
-		t.Fatalf("points = %+v, want %+v", chart.Points, want)
+	if !reflect.DeepEqual(chart, want) {
+		t.Errorf("chart = %+v\nwant  %+v", chart, want)
 	}
-	for i := range want {
-		if chart.Points[i] != want[i] {
-			t.Errorf("point %d = %+v, want %+v", i, chart.Points[i], want[i])
-		}
+}
+
+// Points follow the calendar whatever order the repository returns buckets
+// in, stock out stays positive, and totals are the sums of the buckets.
+func TestStockMovementChart_MonthlyOrderAndTotals(t *testing.T) {
+	repo := &fakeDashboardRepository{buckets: []domain.StockMovementBucket{
+		{Period: "2026-03-01", StockIn: 4, StockOut: 9},
+		{Period: "2026-01-01", StockIn: 10, StockOut: 2},
+	}}
+	chart, err := newTestDashboard(repo, time.Now()).StockMovementChart(context.Background(), dto.StockMovementChartQuery{
+		From: "2026-01-15", To: "2026-04-02", Timezone: "Asia/Ho_Chi_Minh",
+	})
+	if err != nil {
+		t.Fatalf("StockMovementChart: %v", err)
 	}
-	if chart.TotalStockIn != 7 || chart.TotalStockOut != 8 {
-		t.Errorf("totals = %d in / %d out, want 7 / 8", chart.TotalStockIn, chart.TotalStockOut)
+
+	want := dto.StockMovementChartResponse{
+		From: "2026-01-15", To: "2026-04-02", Granularity: "month", Timezone: "Asia/Ho_Chi_Minh",
+		Points: []dto.StockMovementChartPoint{
+			{Period: "2026-01-01", StockIn: 10, StockOut: 2},
+			{Period: "2026-02-01"},
+			{Period: "2026-03-01", StockIn: 4, StockOut: 9},
+			{Period: "2026-04-01"},
+		},
+		Totals: dto.StockMovementChartTotals{StockIn: 14, StockOut: 11},
+	}
+	if !reflect.DeepEqual(chart, want) {
+		t.Errorf("chart = %+v\nwant  %+v", chart, want)
 	}
 }
 
@@ -242,8 +313,8 @@ func TestStockMovementChart_EmptyRangeIsAllZero(t *testing.T) {
 			t.Errorf("point %+v, want zero", p)
 		}
 	}
-	if chart.TotalStockIn != 0 || chart.TotalStockOut != 0 {
-		t.Errorf("totals = %d / %d, want 0 / 0", chart.TotalStockIn, chart.TotalStockOut)
+	if chart.Totals != (dto.StockMovementChartTotals{}) {
+		t.Errorf("totals = %d / %d, want 0 / 0", chart.Totals.StockIn, chart.Totals.StockOut)
 	}
 }
 
@@ -313,7 +384,7 @@ func TestStockMovementChart_DaylightSavingDays(t *testing.T) {
 				t.Errorf("%s point %d = %s, want %s", r.tz, i, p.Period, want[i])
 			}
 		}
-		if chart.Points[1].StockIn != 1 || chart.TotalStockIn != 1 {
+		if chart.Points[1].StockIn != 1 || chart.Totals.StockIn != 1 {
 			t.Errorf("%s: bucket for %s not placed: %+v", r.tz, r.middle, chart.Points)
 		}
 	}
@@ -401,8 +472,12 @@ func TestStockMovementChart_InvalidQuery(t *testing.T) {
 func TestStockMovementChart_RepositoryErrors(t *testing.T) {
 	dbErr := errors.New("connection reset")
 	uc := newTestDashboard(&fakeDashboardRepository{bucketsErr: dbErr}, time.Now())
-	if _, err := uc.StockMovementChart(context.Background(), dto.StockMovementChartQuery{}); !errors.Is(err, dbErr) {
+	got, err := uc.StockMovementChart(context.Background(), dto.StockMovementChartQuery{})
+	if !errors.Is(err, dbErr) {
 		t.Fatalf("error = %v, want the repository error", err)
+	}
+	if !reflect.DeepEqual(got, dto.StockMovementChartResponse{}) {
+		t.Errorf("chart on error = %+v, want the zero value", got)
 	}
 
 	// A bucket outside the requested range indicates a bug and is reported.

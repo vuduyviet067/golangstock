@@ -3,7 +3,6 @@ package http
 import (
 	"net/http"
 
-	"gostock/internal/domain"
 	"gostock/internal/dto"
 	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
@@ -17,42 +16,6 @@ type DashboardHandler struct {
 func NewDashboardHandler(uc *usecase.DashboardUseCase) *DashboardHandler {
 	return &DashboardHandler{
 		useCase: uc,
-	}
-}
-
-func toDashboardSummaryResponse(s domain.InventorySummary) dto.DashboardSummaryResponse {
-	return dto.DashboardSummaryResponse{
-		TotalProducts:      s.TotalProducts,
-		TotalStock:         s.TotalStock,
-		LowStockProducts:   s.LowStock,
-		OutOfStockProducts: s.OutOfStock,
-		StatusBreakdown: []dto.InventoryStatusCount{
-			{Status: usecase.InventoryStatusNormal, Count: s.Normal},
-			{Status: usecase.InventoryStatusLowStock, Count: s.LowStock},
-			{Status: usecase.InventoryStatusOutOfStock, Count: s.OutOfStock},
-		},
-	}
-}
-
-func toStockMovementChartResponse(c domain.StockMovementChart) dto.StockMovementChartResponse {
-	points := make([]dto.StockMovementChartPoint, len(c.Points))
-	for i, p := range c.Points {
-		points[i] = dto.StockMovementChartPoint{
-			Period:   p.Period,
-			StockIn:  p.StockIn,
-			StockOut: p.StockOut,
-		}
-	}
-	return dto.StockMovementChartResponse{
-		From:        c.From,
-		To:          c.To,
-		Granularity: c.Granularity,
-		Timezone:    c.Timezone,
-		Points:      points,
-		Totals: dto.StockMovementChartTotals{
-			StockIn:  c.TotalStockIn,
-			StockOut: c.TotalStockOut,
-		},
 	}
 }
 
@@ -70,7 +33,7 @@ func (h *DashboardHandler) Summary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.Success(w, http.StatusOK, "Dashboard summary retrieved successfully", toDashboardSummaryResponse(summary))
+	response.Success(w, http.StatusOK, "Dashboard summary retrieved successfully", summary)
 }
 
 // StockMovementChart serves GET /api/v1/dashboard/stock-movements with the
@@ -94,5 +57,5 @@ func (h *DashboardHandler) StockMovementChart(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	response.Success(w, http.StatusOK, "Stock movement chart retrieved successfully", toStockMovementChartResponse(chart))
+	response.Success(w, http.StatusOK, "Stock movement chart retrieved successfully", chart)
 }

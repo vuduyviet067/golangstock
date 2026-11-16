@@ -1,35 +1,154 @@
 /* ==========================================================================
-   GoStock Dashboard Styles
-   Palette: Dark-green (#1b4332), Ivory (#f8f7f4), Warm Neutrals
+   GoStock Styles
+   Design system tokens live in index.css (forest green, walnut, cream,
+   copper). Layout: left navigation | page | right account panel.
    ========================================================================== */
 
-.app-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 24px 20px 48px;
+.icon {
+  flex-shrink: 0;
+}
+
+/* --------------------------------------------------------------------------
+   App shell: three columns on desktop
+   -------------------------------------------------------------------------- */
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--account-width);
+  min-height: 100vh;
+}
+
+.app-main {
+  min-width: 0; /* lets wide tables scroll inside their card, not the page */
+  padding: 28px 32px 48px;
+}
+
+.main-content {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  max-width: 1280px;
+  margin: 0 auto;
 }
 
-/* Header */
-.app-header {
+/* Left sidebar: navigation on deep forest green */
+.app-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  background-color: var(--nav-bg);
+  color: var(--nav-text);
+  padding: 24px 16px;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-brand {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 8px 24px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(245, 239, 228, 0.14);
+}
+
+.sidebar-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background-color: var(--color-bg);
+  color: var(--color-walnut);
+}
+
+.sidebar-brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sidebar-brand-name {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--nav-text);
+}
+
+.sidebar-brand-tagline {
+  font-size: 12px;
+  color: var(--nav-text-muted);
+}
+
+.sidebar-section-label {
+  margin: 8px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--nav-text-muted);
+}
+
+/* Right sidebar: account */
+.account-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
   background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 18px 24px;
-  box-shadow: var(--shadow-sm);
+  border-left: 1px solid var(--color-border);
+  padding: 24px 20px;
 }
 
-.brand-group {
+/* Close buttons and the top bar exist for the mobile drawers only */
+.drawer-close-btn,
+.mobile-topbar,
+.drawer-backdrop {
+  display: none;
+}
+
+/* Page header inside the main column */
+.page-header {
   display: flex;
-  align-items: center;
-  gap: 14px;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-border);
 }
 
+.page-heading {
+  min-width: 0;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-walnut);
+}
+
+.page-subtitle {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Brand block of the login screen */
 .brand-logo {
   font-size: 28px;
   line-height: 1;
@@ -40,7 +159,7 @@
   height: 44px;
   background-color: var(--color-primary-subtle);
   border-radius: var(--radius-md);
-  border: 1px solid #c8e6c9;
+  border: 1px solid var(--color-border);
 }
 
 .brand-title {
@@ -49,18 +168,6 @@
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--color-primary);
-}
-
-.brand-subtitle {
-  margin: 2px 0 0;
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 /* Buttons */
@@ -87,6 +194,11 @@
   cursor: not-allowed;
 }
 
+.btn:focus-visible {
+  outline: 2px solid var(--color-copper);
+  outline-offset: 2px;
+}
+
 .btn-refresh {
   background-color: var(--color-surface);
   border-color: var(--color-border);
@@ -95,7 +207,7 @@
 
 .btn-refresh:hover:not(:disabled) {
   background-color: var(--color-surface-muted);
-  border-color: #cbd5e1;
+  border-color: var(--color-text-subtle);
 }
 
 .refresh-icon {
@@ -325,13 +437,13 @@
 }
 
 .product-table thead th {
-  background-color: #faf9f6;
-  color: var(--color-text-muted);
+  background-color: var(--color-walnut-subtle);
+  color: var(--color-walnut);
   font-weight: 600;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding: 12px 16px;
+  padding: 12px;
   border-bottom: 1px solid var(--color-border);
   white-space: nowrap;
   user-select: none;
@@ -369,15 +481,17 @@
 }
 
 .product-table tbody tr:hover {
-  background-color: #faf9f6;
+  background-color: var(--color-surface-muted);
 }
 
 .product-table tbody tr:last-child {
   border-bottom: none;
 }
 
+/* 12px sides (was 16px): the admin table must fit the page column at
+   1440px, which the side columns make narrower than the old 1200px page. */
 .product-table td {
-  padding: 14px 16px;
+  padding: 14px 12px;
   color: var(--color-text);
   vertical-align: middle;
 }
@@ -407,6 +521,7 @@
   padding: 2px 6px;
   border-radius: var(--radius-sm);
   color: var(--color-text);
+  white-space: nowrap;
 }
 
 /* Badges */
@@ -417,6 +532,10 @@
   font-weight: 600;
   border-radius: 9999px;
   line-height: 1.2;
+  /* One line, like the SKU and the action buttons: the narrower page column
+     would otherwise wrap "Bình thường (42)" into a 3-line blob. A narrow
+     table scrolls inside its card instead. */
+  white-space: nowrap;
 }
 
 .badge-success {
@@ -453,6 +572,7 @@
   border: 1px solid var(--color-border);
   background-color: var(--color-surface);
   color: var(--color-text);
+  white-space: nowrap;
   cursor: pointer;
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
@@ -559,7 +679,7 @@
   flex-wrap: wrap;
   gap: 16px;
   padding: 14px 20px;
-  background-color: #faf9f6;
+  background-color: var(--color-surface-muted);
   border-top: 1px solid var(--color-border);
 }
 
@@ -610,18 +730,12 @@
 
 /* Responsive adjustments */
 @media (max-width: 640px) {
-  .app-container {
-    padding: 16px 12px;
-  }
-
-  .app-header {
+  .page-header {
     flex-direction: column;
-    align-items: flex-start;
-    gap: 14px;
+    align-items: stretch;
   }
 
-  .header-actions {
-    width: 100%;
+  .page-actions {
     justify-content: flex-end;
   }
 
@@ -705,7 +819,7 @@
 }
 
 .product-detail-preview {
-  background-color: #faf9f6;
+  background-color: var(--color-surface-muted);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: 14px 16px;
@@ -779,7 +893,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  background-color: #faf9f6;
+  background-color: var(--color-surface-muted);
 }
 
 .modal-title {
@@ -907,7 +1021,7 @@
 .modal-footer {
   padding: 16px 24px;
   border-top: 1px solid var(--color-border-subtle);
-  background-color: #faf9f6;
+  background-color: var(--color-surface-muted);
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -1051,54 +1165,875 @@
   font-size: 15px;
 }
 
-/* User Account in Header */
-.user-account-badge {
+/* --------------------------------------------------------------------------
+   Account panel (right sidebar)
+   -------------------------------------------------------------------------- */
+.account-panel {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 12px;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 100%;
+}
+
+.account-section-label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* Stacked, so the email gets the full width of the panel */
+.account-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
   background-color: var(--color-surface-muted);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
 }
 
-.user-email-text {
-  font-size: 13px;
+.account-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background-color: var(--color-walnut);
+  color: var(--color-bg);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.account-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.account-email {
+  max-width: 100%;
+  font-size: 14px;
   font-weight: 600;
   color: var(--color-text);
+  overflow-wrap: anywhere;
 }
 
-.user-role-pill {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background-color: #e8f5e9;
-  color: #2e7d32;
-  border: 1px solid #c8e6c9;
+.account-role-pill {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
 }
 
-.user-role-pill.role-admin {
-  background-color: #fef3c7;
-  color: #92400e;
-  border-color: #fde68a;
+.account-role-pill.role-admin {
+  background-color: var(--color-copper-subtle);
+  color: var(--color-copper);
+  border-color: #e9c7ad;
 }
 
-.user-role-pill.role-user {
-  background-color: #e0f2fe;
-  color: #0369a1;
-  border-color: #bae6fd;
+.account-role-pill.role-user {
+  background-color: var(--color-primary-subtle);
+  color: var(--color-primary);
+  border-color: #c5d9cc;
+}
+
+.account-role-code {
+  font-weight: 400;
+}
+
+.account-scope {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+/* Logout sits at the bottom of the account panel, away from navigation */
+.account-actions {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border-subtle);
 }
 
 .btn-logout {
+  width: 100%;
   background-color: var(--color-surface);
-  border-color: #fca5a5;
+  border-color: #e3b5ad;
   color: var(--color-danger);
 }
 
 .btn-logout:hover:not(:disabled) {
-  background-color: #fef2f2;
+  background-color: var(--color-danger-bg);
   border-color: var(--color-danger);
 }
 
+/* --------------------------------------------------------------------------
+   Main navigation (left sidebar, vertical tabs)
+   -------------------------------------------------------------------------- */
+.main-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The label comes first in the markup; the icon is shown before it. */
+.main-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 14px;
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+  color: var(--nav-text-muted);
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.main-tab-icon {
+  order: -1;
+}
+
+.main-tab:hover:not(.active) {
+  background-color: var(--nav-bg-hover);
+  color: var(--nav-text);
+}
+
+.main-tab.active {
+  background-color: var(--nav-bg-active);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+/* Copper indicator bar on the active item */
+.main-tab.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background-color: var(--nav-indicator);
+}
+
+.main-tab:focus-visible {
+  outline: 2px solid var(--nav-indicator);
+  outline-offset: 2px;
+}
+
+/* Dashboard tab */
+.dashboard-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dashboard-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-walnut);
+}
+
+.dashboard-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 160px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.dashboard-alert-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dashboard-alert-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Summary cards: one column in a narrow page column, two from 420px, four
+   from 760px. Container queries follow the width of the main column, which
+   the sidebars make narrower than the viewport.
+   minmax(0, 1fr), min-width: 0 and overflow-wrap keep long numbers inside. */
+.main-content {
+  container-type: inline-size;
+}
+
+.summary-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin: 0;
+}
+
+@container (min-width: 420px) {
+  .summary-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 760px) {
+  .summary-cards {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.summary-card {
+  --summary-card-accent: var(--color-primary);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 16px 18px 16px 22px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+/* Accent bar on the left edge of each card. */
+.summary-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+  background-color: var(--summary-card-accent);
+}
+
+.summary-card--primary {
+  --summary-card-accent: var(--color-primary);
+}
+
+.summary-card--accent {
+  --summary-card-accent: var(--color-accent);
+}
+
+/* Same tokens as the low and out of stock badges of the product table. */
+.summary-card--warning {
+  --summary-card-accent: var(--color-warning);
+}
+
+.summary-card--danger {
+  --summary-card-accent: var(--color-danger);
+}
+
+.summary-card-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.summary-card-value {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* Visually hidden text that screen readers still announce. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Inventory status pie */
+.status-pie {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 18px 20px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.status-pie-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+
+.status-pie-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.status-pie-total {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+/* ResponsiveContainer takes this box's size, so it needs a definite height. */
+.status-pie-chart {
+  width: 100%;
+  max-width: 440px;
+  height: 280px;
+  margin: 0 auto;
+}
+
+@media (max-width: 480px) {
+  .status-pie-chart {
+    height: 260px;
+  }
+}
+
+.status-pie-empty {
+  margin: 0;
+  padding: 32px 16px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--color-text-muted);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+/* Stock movement bar chart */
+.stock-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 18px 20px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.stock-chart-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+
+.stock-chart-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.stock-chart-range {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.stock-chart-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 0;
+}
+
+.stock-chart-total {
+  --stock-chart-total-accent: var(--color-accent);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding-left: 10px;
+  border-left: 4px solid var(--stock-chart-total-accent);
+}
+
+/* Same tokens as the two bar series. */
+.stock-chart-total--in {
+  --stock-chart-total-accent: var(--color-accent);
+}
+
+.stock-chart-total--out {
+  --stock-chart-total-accent: var(--color-warning);
+}
+
+.stock-chart-total dt {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.stock-chart-total dd {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.stock-chart-note {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  background-color: var(--color-surface-muted);
+  border-radius: var(--radius-md);
+}
+
+/* ResponsiveContainer takes this box's size, so it needs a definite height.
+   overflow: hidden keeps a hidden Recharts tooltip, still placed for a wider
+   viewport after a resize, from widening the page; visible tooltips stay
+   inside the chart (Recharts' allowEscapeViewBox is false). */
+.stock-chart-canvas {
+  width: 100%;
+  height: 320px;
+  overflow: hidden;
+}
+
+@media (max-width: 480px) {
+  .stock-chart-canvas {
+    height: 260px;
+  }
+}
+
+.stock-chart-empty {
+  margin: 0;
+  padding: 32px 16px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--color-text-muted);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+/* Date range filter of the stock movement chart */
+/* Presets on top, the custom range below: the error message under the
+   custom range then never shifts the presets. */
+.range-filter {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.range-filter-presets {
+  display: inline-grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 4px;
+  padding: 4px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.range-filter-preset {
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.range-filter-preset:hover:not([aria-pressed='true']) {
+  background-color: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.range-filter-preset[aria-pressed='true'] {
+  background-color: var(--color-primary);
+  color: #ffffff;
+}
+
+.range-filter-preset:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.range-filter-custom {
+  width: 100%;
+  max-width: 640px;
+  min-width: 0;
+}
+
+/* A fieldset is min-width: min-content by default, which would widen the page. */
+.range-filter-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.range-filter-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.range-filter-custom[data-active] .range-filter-legend {
+  color: var(--color-primary);
+}
+
+.range-filter-badge {
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
+  background-color: var(--color-surface-muted);
+  border-radius: 999px;
+}
+
+.range-filter-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px 12px;
+}
+
+.range-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.range-filter-error {
+  margin: 6px 0 0;
+}
+
+@media (max-width: 480px) {
+  .range-filter-presets {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .range-filter-preset {
+    padding: 7px 4px;
+  }
+
+  .range-filter-fields {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .range-filter-apply {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Below 360 px two date inputs side by side are too narrow for the date. */
+@media (max-width: 359px) {
+  .range-filter-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Stock movement section: the filter, then the chart (or its state) */
+.stock-movement {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.stock-movement-filter {
+  min-width: 0;
+  padding: 16px 20px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+/* About the height of the chart panel, so the page does not jump when the
+   first chart arrives. */
+.stock-movement-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 420px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.stock-movement-chart {
+  position: relative;
+  min-width: 0;
+}
+
+/* The previous chart stays in place, dimmed and inert, while the newly
+   chosen range loads. */
+.stock-movement-chart[data-stale] .stock-chart {
+  opacity: 0.5;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.stock-movement-updating {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  margin: 0;
+  padding: 10px 16px;
+  font-size: 14px;
+  color: var(--color-text);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.stock-movement-updating .spinner {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-width: 2px;
+}
+
+@media (max-width: 480px) {
+  .stock-movement-filter {
+    padding: 14px 12px;
+  }
+
+  .stock-movement-placeholder {
+    min-height: 360px;
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-alert {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* ==========================================================================
+   Responsive app shell
+   >= 1280px  three columns at full width
+   1024-1279  narrower side columns
+   768-1023   left navigation becomes an icon rail
+   < 768      top bar; navigation and account open as drawers
+   ========================================================================== */
+@media (max-width: 1279px) {
+  :root {
+    --sidebar-width: 216px;
+    --account-width: 240px;
+  }
+
+  .app-main {
+    padding: 24px 24px 40px;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  :root {
+    --sidebar-width: 76px;
+    --account-width: 224px;
+  }
+
+  .app-sidebar {
+    padding: 20px 10px;
+  }
+
+  .sidebar-brand {
+    justify-content: center;
+    padding: 0 0 20px;
+  }
+
+  .sidebar-brand-text,
+  .sidebar-section-label {
+    display: none;
+  }
+
+  /* Icon only; the label stays in the markup as the accessible name and
+     shows as a tooltip (title). */
+  .main-tab {
+    justify-content: center;
+    padding: 12px;
+    font-size: 0;
+  }
+
+  .account-sidebar {
+    padding: 20px 16px;
+  }
+}
+
+@media (max-width: 767px) {
+  .app-shell {
+    display: block;
+  }
+
+  .mobile-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    background-color: var(--nav-bg);
+    color: var(--nav-text);
+  }
+
+  .topbar-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 1px solid rgba(245, 239, 228, 0.25);
+    border-radius: var(--radius-md);
+    background: none;
+    color: var(--nav-text);
+    cursor: pointer;
+  }
+
+  .topbar-btn:focus-visible {
+    outline: 2px solid var(--nav-indicator);
+    outline-offset: 2px;
+  }
+
+  .topbar-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 17px;
+    font-weight: 700;
+  }
+
+  .app-main {
+    padding: 16px 12px 32px;
+  }
+
+  /* Drawers: hidden (and out of the tab order) until opened */
+  .app-sidebar,
+  .account-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    z-index: 60;
+    width: min(300px, 86vw);
+    height: auto;
+    visibility: hidden;
+    /* Closing: slide out first, then hide (visibility flips at the end). */
+    transition: transform 0.2s ease, visibility 0s linear 0.2s;
+  }
+
+  .app-sidebar {
+    left: 0;
+    transform: translateX(-100%);
+  }
+
+  .account-sidebar {
+    right: 0;
+    transform: translateX(100%);
+    border-left: none;
+  }
+
+  .app-sidebar.is-open,
+  .account-sidebar.is-open {
+    visibility: visible;
+    transform: none;
+    box-shadow: var(--shadow-md);
+    /* Opening: visible at once, so focus can move into the drawer right away
+       (a hidden element cannot take focus). */
+    transition: transform 0.2s ease, visibility 0s;
+  }
+
+  .drawer-close-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    float: right;
+    width: 36px;
+    height: 36px;
+    margin: -8px -4px 0 8px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-md);
+    background: none;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .drawer-close-btn:focus-visible {
+    outline: 2px solid var(--color-copper);
+    outline-offset: 2px;
+  }
+
+  .drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background-color: rgba(20, 53, 40, 0.45);
+  }
+
+  .page-title {
+    font-size: 22px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar,
+  .account-sidebar,
+  .main-tab {
+    transition: none;
+  }
+}

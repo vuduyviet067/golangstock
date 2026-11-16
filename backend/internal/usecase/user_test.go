@@ -92,9 +92,7 @@ func TestUserUseCase_GetByID(t *testing.T) {
 		if user.ID != 1 {
 			t.Errorf("expected ID 1, got %d", user.ID)
 		}
-		if user.PasswordHash != "" {
-			t.Errorf("expected PasswordHash to be empty, got %q", user.PasswordHash)
-		}
+		assertNoUserSecrets(t, user, "$2a$10$secretHashThatMustNotLeak")
 	})
 
 	t.Run("invalid user ID", func(t *testing.T) {
@@ -155,11 +153,7 @@ func TestUserUseCase_List(t *testing.T) {
 		if len(users) != 2 {
 			t.Fatalf("expected 2 users, got %d", len(users))
 		}
-		for i, u := range users {
-			if u.PasswordHash != "" {
-				t.Errorf("user %d: expected empty PasswordHash, got %q", i, u.PasswordHash)
-			}
-		}
+		assertNoUserSecrets(t, users, "$2a$10$secretAdminHash", "$2a$10$secretUserHash")
 	})
 
 	t.Run("invalid page", func(t *testing.T) {
@@ -286,9 +280,7 @@ func TestUserUseCase_Update(t *testing.T) {
 		if len(repo.updateAndRevokeCalls) != 0 {
 			t.Errorf("expected 0 calls to UpdateAndRevokeTokens on email-only update, got %d", len(repo.updateAndRevokeCalls))
 		}
-		if res.PasswordHash != "" {
-			t.Errorf("expected PasswordHash to be cleared, got %q", res.PasswordHash)
-		}
+		assertNoUserSecrets(t, res, "$2a$10$someSecretHash")
 	})
 
 	t.Run("role unchanged does not invoke token revocation", func(t *testing.T) {
@@ -339,9 +331,7 @@ func TestUserUseCase_Update(t *testing.T) {
 		if len(repo.updateCalls) != 0 {
 			t.Errorf("expected 0 calls to standard Update when role changed, got %d", len(repo.updateCalls))
 		}
-		if res.PasswordHash != "" {
-			t.Errorf("expected PasswordHash to be cleared, got %q", res.PasswordHash)
-		}
+		assertNoUserSecrets(t, res, "$2a$10$someSecretHash")
 	})
 
 	t.Run("role surrounded by whitespace is trimmed and stored as admin", func(t *testing.T) {

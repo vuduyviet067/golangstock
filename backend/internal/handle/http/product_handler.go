@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"gostock/internal/domain"
 	"gostock/internal/dto"
 	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
@@ -23,30 +22,33 @@ func NewProductHandler(uc *usecase.ProductUseCase) *ProductHandler {
 	}
 }
 
-// productFromCreateRequest maps a create request to a new product. The request
-// ID is accepted for backward compatibility but ignored: the database assigns it.
-// An omitted or null minimum_stock means 0 (no threshold).
-func productFromCreateRequest(req dto.CreateProductRequest) domain.Product {
-	product := domain.Product{
-		SKU:      req.SKU,
-		Name:     req.Name,
-		Price:    req.Price,
-		Quantity: req.Quantity,
+// createProductInput adapts a create request to the use case input. It copies
+// the fields as sent: the use case trims, validates and applies the default
+// minimum stock. The request ID is accepted for backward compatibility but
+// dropped: the database assigns it.
+func createProductInput(req dto.CreateProductRequest) dto.CreateProductInput {
+	return dto.CreateProductInput{
+		SKU:          req.SKU,
+		Name:         req.Name,
+		Price:        req.Price,
+		Quantity:     req.Quantity,
+		MinimumStock: req.MinimumStock,
 	}
-	if req.MinimumStock != nil {
-		product.MinimumStock = *req.MinimumStock
-	}
-	return product
 }
 
-func toProductResponse(p domain.Product) dto.ProductResponse {
-	return dto.ProductResponse{
-		ID:           p.ID,
-		SKU:          p.SKU,
-		Name:         p.Name,
-		Price:        p.Price,
-		Quantity:     p.Quantity,
-		MinimumStock: p.MinimumStock,
+// updateProductInput adapts an update request to the use case input. The ID
+// is the one parsed from the URL path; the request body's id is accepted for
+// backward compatibility but ignored. The other fields are copied as sent: the
+// use case trims and validates them, and a nil minimum stock stays nil (keep
+// the stored threshold). The request's quantity has no counterpart: Update
+// rejects it before calling this.
+func updateProductInput(id int64, req dto.UpdateProductRequest) dto.UpdateProductInput {
+	return dto.UpdateProductInput{
+		ID:           id,
+		SKU:          req.SKU,
+		Name:         req.Name,
+		Price:        req.Price,
+		MinimumStock: req.MinimumStock,
 	}
 }
 
@@ -60,27 +62,6 @@ func currentActorID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 		return 0, false
 	}
 	return user.ID, true
-}
-
-// toProductResponsePtr keeps a nil product as a JSON null.
-func toProductResponsePtr(p *domain.Product) *dto.ProductResponse {
-	if p == nil {
-		return nil
-	}
-	resp := toProductResponse(*p)
-	return &resp
-}
-
-// toProductResponses keeps a nil slice as a JSON null and an empty slice as [].
-func toProductResponses(products []domain.Product) []dto.ProductResponse {
-	if products == nil {
-		return nil
-	}
-	items := make([]dto.ProductResponse, len(products))
-	for i, p := range products {
-		items[i] = toProductResponse(p)
-	}
-	return items
 }
 
 func (h *ProductHandler) GetByID(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +89,7 @@ func (h *ProductHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.Success(w, http.StatusOK, "Product retrieved successfully", toProductResponsePtr(product))
+	response.Success(w, http.StatusOK, "Product retrieved successfully", product)
 }
 func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -152,7 +133,7 @@ func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.Success(w, http.StatusOK, "Products retrieved successfully", toProductResponses(products))
+	response.Success(w, http.StatusOK, "Products retrieved successfully", products)
 }
 func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -183,19 +164,18 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	product := productFromCreateRequest(req)
-
 	actorID, ok := currentActorID(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.useCase.Create(r.Context(), &product, actorID); err != nil {
+	created, err := h.useCase.Create(r.Context(), createProductInput(req), actorID)
+	if err != nil {
 		WriteError(w, r, err)
 		return
 	}
 
-	response.Success(w, http.StatusCreated, "Product created successfully", toProductResponse(product))
+	response.Success(w, http.StatusCreated, "Product created successfully", created)
 }
 
 func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -247,20 +227,14 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	product := domain.Product{
-		ID:    id,
-		SKU:   req.SKU,
-		Name:  req.Name,
-		Price: req.Price,
-	}
-
 	// An omitted or null minimum_stock keeps the stored threshold.
-	if err := h.useCase.Update(r.Context(), &product, req.MinimumStock); err != nil {
+	updated, err := h.useCase.Update(r.Context(), updateProductInput(id, req))
+	if err != nil {
 		WriteError(w, r, err)
 		return
 	}
 
-	response.Success(w, http.StatusOK, "Product updated successfully", toProductResponse(product))
+	response.Success(w, http.StatusOK, "Product updated successfully", updated)
 }
 
 func (h *ProductHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -344,7 +318,7 @@ func (h *ProductHandler) StockIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.Success(w, http.StatusOK, "Stock added successfully", toProductResponsePtr(product))
+	response.Success(w, http.StatusOK, "Stock added successfully", product)
 }
 
 func (h *ProductHandler) StockOut(w http.ResponseWriter, r *http.Request) {
@@ -401,5 +375,5 @@ func (h *ProductHandler) StockOut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.Success(w, http.StatusOK, "Stock reduced successfully", toProductResponsePtr(product))
+	response.Success(w, http.StatusOK, "Stock reduced successfully", product)
 }

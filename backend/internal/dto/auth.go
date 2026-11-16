@@ -1,11 +1,5 @@
 package dto
 
-import (
-	"time"
-
-	"gostock/internal/domain"
-)
-
 type LoginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
@@ -23,10 +17,11 @@ type AuthUserResponse struct {
 	CreatedAt string `json:"created_at"`
 }
 
+// LoginResult is the outcome of a login or a refresh. User is the response
+// body; the tokens are for the auth cookies only (whose lifetimes come from
+// the cookie configuration) and never appear in a response body.
 type LoginResult struct {
-	User                  *domain.User
-	AccessToken           string
-	RefreshToken          string
-	AccessTokenExpiresAt  time.Time
-	RefreshTokenExpiresAt time.Time
+	User         AuthUserResponse
+	AccessToken  string
+	RefreshToken string
 }

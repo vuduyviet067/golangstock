@@ -44,16 +44,32 @@ func TestDashboardRoutes_AuthorizationMatrix(t *testing.T) {
 		{"Invalid token - summary", http.MethodGet, summary, "bogus-token", http.StatusUnauthorized, `"message":"invalid or expired token"`},
 		{"Invalid token - chart", http.MethodGet, chart, "bogus-token", http.StatusUnauthorized, `"message":"invalid or expired token"`},
 
-		{"User - summary", http.MethodGet, summary, "user-token", http.StatusOK, `"message":"Dashboard summary retrieved successfully"`},
-		{"User - chart", http.MethodGet, chart, "user-token", http.StatusOK, `"message":"Stock movement chart retrieved successfully"`},
-		{"Admin - summary", http.MethodGet, summary, "admin-token", http.StatusOK, `"total_products":3`},
-		{"Admin - chart", http.MethodGet, chart + "?from=2026-11-01&to=2026-11-03", "admin-token", http.StatusOK, `"granularity":"day"`},
+		{"Anonymous - POST summary", http.MethodPost, summary, "", http.StatusUnauthorized, `"message":"authentication required"`},
+		{"Anonymous - chart invalid query", http.MethodGet, chart + "?granularity=week", "", http.StatusUnauthorized, `"message":"authentication required"`},
 
-		{"User - chart invalid from", http.MethodGet, chart + "?from=11/01/2026", "user-token", http.StatusBadRequest, `"fields":{"from":"must be a date in YYYY-MM-DD format"}`},
-		{"User - chart invalid granularity", http.MethodGet, chart + "?granularity=week", "user-token", http.StatusBadRequest, `"fields":{"granularity":"must be auto, day or month"}`},
+		{"User - summary (forbidden)", http.MethodGet, summary, "user-token", http.StatusForbidden, `"message":"forbidden: admin role required"`},
+		{"User - chart (forbidden)", http.MethodGet, chart, "user-token", http.StatusForbidden, `"message":"forbidden: admin role required"`},
+		{"User - chart with valid query (forbidden)", http.MethodGet, chart + "?from=2026-11-01&to=2026-11-03", "user-token", http.StatusForbidden, `"message":"forbidden: admin role required"`},
+
+		// The role is checked before the query and the method.
+		{"User - summary with query (forbidden)", http.MethodGet, summary + "?from=bogus", "user-token", http.StatusForbidden, `"message":"forbidden: admin role required"`},
+		{"User - chart invalid from (forbidden before validation)", http.MethodGet, chart + "?from=11/01/2026", "user-token", http.StatusForbidden, `"message":"forbidden: admin role required"`},
+		{"User - chart invalid granularity (forbidden before validation)", http.MethodGet, chart + "?granularity=week", "user-token", http.StatusForbidden, `"message":"forbidden: admin role required"`},
+		{"User - chart invalid tz (forbidden before validation)", http.MethodGet, chart + "?tz=Mars/Base", "user-token", http.StatusForbidden, `"message":"forbidden: admin role required"`},
+		{"User - POST summary (forbidden before method check)", http.MethodPost, summary, "user-token", http.StatusForbidden, `"message":"forbidden: admin role required"`},
+		{"User - DELETE chart (forbidden before method check)", http.MethodDelete, chart, "user-token", http.StatusForbidden, `"message":"forbidden: admin role required"`},
+
+		{"Admin - summary", http.MethodGet, summary, "admin-token", http.StatusOK, `"total_products":3`},
+		{"Admin - summary message", http.MethodGet, summary, "admin-token", http.StatusOK, `"message":"Dashboard summary retrieved successfully"`},
+		{"Admin - chart", http.MethodGet, chart, "admin-token", http.StatusOK, `"message":"Stock movement chart retrieved successfully"`},
+		{"Admin - chart with range", http.MethodGet, chart + "?from=2026-11-01&to=2026-11-03", "admin-token", http.StatusOK, `"granularity":"day"`},
+
+		{"Admin - chart invalid from", http.MethodGet, chart + "?from=11/01/2026", "admin-token", http.StatusBadRequest, `"fields":{"from":"must be a date in YYYY-MM-DD format"}`},
+		{"Admin - chart invalid granularity", http.MethodGet, chart + "?granularity=week", "admin-token", http.StatusBadRequest, `"fields":{"granularity":"must be auto, day or month"}`},
 		{"Admin - chart invalid tz", http.MethodGet, chart + "?tz=Mars/Base", "admin-token", http.StatusBadRequest, `"fields":{"tz":"must be an IANA time zone name"}`},
 
-		{"User - POST summary", http.MethodPost, summary, "user-token", http.StatusMethodNotAllowed, `"message":"method not allowed"`},
+		{"Admin - POST summary", http.MethodPost, summary, "admin-token", http.StatusMethodNotAllowed, `"message":"method not allowed"`},
+		{"Admin - POST chart", http.MethodPost, chart, "admin-token", http.StatusMethodNotAllowed, `"message":"method not allowed"`},
 		{"Admin - DELETE chart", http.MethodDelete, chart, "admin-token", http.StatusMethodNotAllowed, `"message":"method not allowed"`},
 		{"Admin - unknown dashboard path", http.MethodGet, "/api/v1/dashboard", "admin-token", http.StatusNotFound, ""},
 	}

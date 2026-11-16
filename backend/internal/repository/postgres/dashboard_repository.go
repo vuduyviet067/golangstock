@@ -18,7 +18,7 @@ func NewDashboardRepository(db *sql.DB) *DashboardRepository {
 }
 
 // InventorySummary reads the whole product table once. The status conditions
-// match usecase.InventoryStatus*: they are mutually exclusive and, with the
+// match domain.InventoryStatus*: they are mutually exclusive and, with the
 // quantity and minimum_stock CHECK constraints, cover every product.
 func (r *DashboardRepository) InventorySummary(ctx context.Context) (domain.InventorySummary, error) {
 	var s domain.InventorySummary

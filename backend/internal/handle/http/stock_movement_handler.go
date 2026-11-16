@@ -5,8 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"gostock/internal/domain"
-	"gostock/internal/dto"
 	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
 )
@@ -20,30 +18,6 @@ func NewStockMovementHandler(uc *usecase.StockMovementUseCase) *StockMovementHan
 	return &StockMovementHandler{
 		useCase: uc,
 	}
-}
-
-func toStockMovementResponse(m domain.StockMovement) dto.StockMovementResponse {
-	return dto.StockMovementResponse{
-		ID:             m.ID,
-		ProductID:      m.ProductID,
-		ProductSKU:     m.ProductSKU,
-		MovementType:   m.Type,
-		QuantityChange: m.QuantityChange,
-		QuantityBefore: m.QuantityBefore,
-		QuantityAfter:  m.QuantityAfter,
-		UserID:         m.UserID,
-		CreatedAt:      m.CreatedAt,
-	}
-}
-
-// toStockMovementResponses always returns a non-nil slice, so an empty page
-// is serialized as [].
-func toStockMovementResponses(movements []domain.StockMovement) []dto.StockMovementResponse {
-	items := make([]dto.StockMovementResponse, len(movements))
-	for i, m := range movements {
-		items[i] = toStockMovementResponse(m)
-	}
-	return items
 }
 
 // parsePagination reads the page and limit query parameters with the same
@@ -108,7 +82,7 @@ func (h *StockMovementHandler) ListByProduct(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	response.Paginated(w, "Stock movements retrieved successfully", toStockMovementResponses(movements), page, limit, total)
+	response.Paginated(w, "Stock movements retrieved successfully", movements, page, limit, total)
 }
 
 // List serves GET /api/v1/stock-movements. The router restricts it to admins.
@@ -130,5 +104,5 @@ func (h *StockMovementHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.Paginated(w, "Stock movements retrieved successfully", toStockMovementResponses(movements), page, limit, total)
+	response.Paginated(w, "Stock movements retrieved successfully", movements, page, limit, total)
 }

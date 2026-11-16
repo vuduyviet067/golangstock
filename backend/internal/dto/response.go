@@ -6,6 +6,12 @@ type APIResponse struct {
 	Data    any    `json:"data"`
 }
 
+// MessageResponse is a data payload that carries only a message, such as the
+// logout response {"message":"logged out"}.
+type MessageResponse struct {
+	Message string `json:"message"`
+}
+
 type PaginatedData struct {
 	Items      any            `json:"items"`
 	Pagination PaginationMeta `json:"pagination"`

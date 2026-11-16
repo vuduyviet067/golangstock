@@ -134,10 +134,14 @@ func NewRouter(
 	}
 
 	// GET /api/v1/dashboard/summary and /api/v1/dashboard/stock-movements:
-	// User & Admin.
+	// Admin only. The role is checked before the method and the query.
 	if dashboardHandler != nil {
-		mux.Handle("/api/v1/dashboard/summary", authMiddleware(http.HandlerFunc(dashboardHandler.Summary)))
-		mux.Handle("/api/v1/dashboard/stock-movements", authMiddleware(http.HandlerFunc(dashboardHandler.StockMovementChart)))
+		mux.Handle("/api/v1/dashboard/summary", authMiddleware(productHTTP.RequireAdmin(
+			http.HandlerFunc(dashboardHandler.Summary),
+		)))
+		mux.Handle("/api/v1/dashboard/stock-movements", authMiddleware(productHTTP.RequireAdmin(
+			http.HandlerFunc(dashboardHandler.StockMovementChart),
+		)))
 	}
 
 	return mux

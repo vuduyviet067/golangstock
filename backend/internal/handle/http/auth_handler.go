@@ -61,17 +61,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	createdAtStr := ""
-	if !user.CreatedAt.IsZero() {
-		createdAtStr = user.CreatedAt.Format(time.RFC3339)
-	}
-
-	response.Success(w, http.StatusCreated, "User registered successfully", dto.AuthUserResponse{
-		ID:        user.ID,
-		Email:     user.Email,
-		Role:      user.Role,
-		CreatedAt: createdAtStr,
-	})
+	response.Success(w, http.StatusCreated, "User registered successfully", user)
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
@@ -110,17 +100,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	h.cookies.SetAuthCookies(w, result.AccessToken, result.RefreshToken)
 
-	createdAtStr := ""
-	if !result.User.CreatedAt.IsZero() {
-		createdAtStr = result.User.CreatedAt.Format(time.RFC3339)
-	}
-
-	response.Success(w, http.StatusOK, "Login successful", dto.AuthUserResponse{
-		ID:        result.User.ID,
-		Email:     result.User.Email,
-		Role:      result.User.Role,
-		CreatedAt: createdAtStr,
-	})
+	response.Success(w, http.StatusOK, "Login successful", result.User)
 }
 
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
@@ -150,17 +130,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	h.cookies.SetAuthCookies(w, result.AccessToken, result.RefreshToken)
 
-	createdAtStr := ""
-	if !result.User.CreatedAt.IsZero() {
-		createdAtStr = result.User.CreatedAt.Format(time.RFC3339)
-	}
-
-	response.Success(w, http.StatusOK, "Token refreshed successfully", dto.AuthUserResponse{
-		ID:        result.User.ID,
-		Email:     result.User.Email,
-		Role:      result.User.Role,
-		CreatedAt: createdAtStr,
-	})
+	response.Success(w, http.StatusOK, "Token refreshed successfully", result.User)
 }
 
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
@@ -176,17 +146,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	createdAtStr := ""
-	if !user.CreatedAt.IsZero() {
-		createdAtStr = user.CreatedAt.Format(time.RFC3339)
-	}
-
-	response.Success(w, http.StatusOK, "User profile retrieved successfully", dto.AuthUserResponse{
-		ID:        user.ID,
-		Email:     user.Email,
-		Role:      user.Role,
-		CreatedAt: createdAtStr,
-	})
+	response.Success(w, http.StatusOK, "User profile retrieved successfully", h.useCase.Me(*user))
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
@@ -218,7 +178,5 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	response.Success(w, http.StatusOK, "logged out", map[string]string{
-		"message": "logged out",
-	})
+	response.Success(w, http.StatusOK, "logged out", h.useCase.LogoutResponse())
 }

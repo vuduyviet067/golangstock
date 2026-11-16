@@ -1,71 +1,62 @@
 package http
 
 import (
-	"reflect"
 	"testing"
 
-	"gostock/internal/domain"
 	"gostock/internal/dto"
 )
 
-func TestProductFromCreateRequest(t *testing.T) {
-	req := dto.CreateProductRequest{ID: 99, SKU: "SKU001", Name: "Keyboard", Price: 100.5, Quantity: 5}
+// TestCreateProductInputFromRequest replaces TestProductFromCreateRequest
+// (Step 5.4A): the handler no longer builds a domain product. It adapts the
+// request to the use case input, copying the fields as sent; the client ID is
+// dropped (the input has no ID field), and trimming and the minimum stock
+// default now belong to the use case, so they must not happen here. The
+// end-to-end results (ID 0 and default 0 at the repository) are pinned by
+// TestCreateRequest_RepositoryReceivesNormalizedProduct and
+// TestCreateMinimumStock.
+func TestCreateProductInputFromRequest(t *testing.T) {
+	req := dto.CreateProductRequest{ID: 99, SKU: "  SKU001 ", Name: " Keyboard", Price: 100.5, Quantity: 5}
 
-	got := productFromCreateRequest(req)
+	got := createProductInput(req)
 
-	want := domain.Product{SKU: "SKU001", Name: "Keyboard", Price: 100.5, Quantity: 5}
+	want := dto.CreateProductInput{SKU: "  SKU001 ", Name: " Keyboard", Price: 100.5, Quantity: 5, MinimumStock: nil}
 	if got != want {
-		t.Fatalf("productFromCreateRequest = %+v, want %+v (client ID must be ignored, missing minimum stock is 0)", got, want)
+		t.Fatalf("createProductInput = %+v, want %+v (fields as sent, no trimming, no default)", got, want)
 	}
 
 	minimum := 3
 	req.MinimumStock = &minimum
-	if got := productFromCreateRequest(req); got.MinimumStock != 3 {
-		t.Fatalf("productFromCreateRequest minimum stock = %d, want 3", got.MinimumStock)
+	if got := createProductInput(req); got.MinimumStock != &minimum {
+		t.Fatalf("createProductInput minimum stock = %v, want the request's pointer %v", got.MinimumStock, &minimum)
 	}
 }
 
-func TestToProductResponse(t *testing.T) {
-	product := domain.Product{ID: 7, SKU: "SKU007", Name: "Keyboard", Price: 99.5, Quantity: 5, MinimumStock: 2}
+// TestUpdateProductInputFromRequest (Step 5.4B): the handler no longer builds a
+// domain product for Update either. The adapter takes the ID parsed from the
+// path, never the body's id, and copies the other fields as sent: no
+// trimming, and a nil minimum stock stays nil (keep the stored threshold),
+// distinct from a pointer to 0. The request's quantity has no counterpart in
+// the input; Update rejects it before the adapter runs
+// (TestUpdateRejectsQuantity).
+func TestUpdateProductInputFromRequest(t *testing.T) {
+	req := dto.UpdateProductRequest{ID: 99, SKU: " SKU007 ", Name: "Keyboard ", Price: 120.5}
 
-	got := toProductResponse(product)
+	got := updateProductInput(7, req)
 
-	want := dto.ProductResponse{ID: 7, SKU: "SKU007", Name: "Keyboard", Price: 99.5, Quantity: 5, MinimumStock: 2}
+	want := dto.UpdateProductInput{ID: 7, SKU: " SKU007 ", Name: "Keyboard ", Price: 120.5, MinimumStock: nil}
 	if got != want {
-		t.Fatalf("toProductResponse = %+v, want %+v", got, want)
+		t.Fatalf("updateProductInput = %+v, want %+v (path ID, fields as sent, nil minimum stock kept)", got, want)
+	}
+
+	zero := 0
+	req.MinimumStock = &zero
+	if got := updateProductInput(7, req); got.MinimumStock != &zero {
+		t.Fatalf("updateProductInput minimum stock = %v, want the request's pointer to 0 %v", got.MinimumStock, &zero)
 	}
 }
 
-func TestToProductResponsePtr(t *testing.T) {
-	if got := toProductResponsePtr(nil); got != nil {
-		t.Fatalf("toProductResponsePtr(nil) = %+v, want nil", got)
-	}
-
-	got := toProductResponsePtr(&domain.Product{ID: 1, SKU: "SKU001"})
-	if got == nil || got.ID != 1 || got.SKU != "SKU001" {
-		t.Fatalf("toProductResponsePtr = %+v, want ID 1 and SKU SKU001", got)
-	}
-}
-
-func TestToProductResponses(t *testing.T) {
-	if got := toProductResponses(nil); got != nil {
-		t.Fatalf("toProductResponses(nil) = %#v, want nil", got)
-	}
-
-	empty := toProductResponses([]domain.Product{})
-	if empty == nil || len(empty) != 0 {
-		t.Fatalf("toProductResponses(empty) = %#v, want a non-nil empty slice", empty)
-	}
-
-	got := toProductResponses([]domain.Product{
-		{ID: 1, SKU: "SKU001", Name: "Mouse", Price: 25, Quantity: 0},
-		{ID: 2, SKU: "SKU002", Name: "Monitor", Price: 199.99, Quantity: 12, MinimumStock: 4},
-	})
-	want := []dto.ProductResponse{
-		{ID: 1, SKU: "SKU001", Name: "Mouse", Price: 25, Quantity: 0},
-		{ID: 2, SKU: "SKU002", Name: "Monitor", Price: 199.99, Quantity: 12, MinimumStock: 4},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("toProductResponses = %+v, want %+v", got, want)
-	}
-}
+// The response mapping tests that used to live here (toProductResponse,
+// toProductResponsePtr, toProductResponses) moved with the mapping itself to
+// internal/mapper/product_test.go (TestToProductResponse,
+// TestToProductResponsePtr, TestToProductResponses), which covers the same
+// inputs and also checks the JSON.

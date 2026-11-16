@@ -8,6 +8,7 @@ import (
 
 	"gostock/internal/domain"
 	"gostock/internal/dto"
+	"gostock/internal/mapper"
 	"gostock/internal/repository"
 )
 
@@ -32,25 +33,33 @@ func NewUserUseCase(
 	}
 }
 
-func (uc *UserUseCase) GetByID(ctx context.Context, id int64) (*domain.User, error) {
+// GetByID returns the user as the user management response DTO, which has no
+// password field. Its timestamps keep their full precision and offset (JSON
+// RFC3339Nano).
+func (uc *UserUseCase) GetByID(ctx context.Context, id int64) (dto.UserResponse, error) {
 	if id <= 0 {
-		return nil, ErrInvalidUserID
+		return dto.UserResponse{}, ErrInvalidUserID
 	}
 
 	user, err := uc.repo.GetByID(ctx, id)
 	if err != nil {
-		return nil, fromRepository(err)
+		return dto.UserResponse{}, fromRepository(err)
+	}
+	if user == nil {
+		return dto.UserResponse{}, ErrUserNotFound
 	}
 
 	user.PasswordHash = ""
-	return user, nil
+	return mapper.ToUserResponse(*user), nil
 }
 
+// List returns one page of users as response DTOs in the repository's order,
+// never nil (an empty page is []), and the repository's total.
 func (uc *UserUseCase) List(
 	ctx context.Context,
 	query string,
 	page, limit int,
-) ([]domain.User, int64, error) {
+) ([]dto.UserResponse, int64, error) {
 	if page < 1 {
 		return nil, 0, ErrInvalidPage
 	}
@@ -68,25 +77,31 @@ func (uc *UserUseCase) List(
 		users[i].PasswordHash = ""
 	}
 
-	return users, total, nil
+	return mapper.ToUserResponses(users), total, nil
 }
 
+// Update changes the user's email and/or role and returns the updated user as
+// a response DTO: created_at is the stored value and updated_at is the one
+// the repository reports.
 func (uc *UserUseCase) Update(
 	ctx context.Context,
 	id int64,
 	input dto.UpdateUserInput,
-) (*domain.User, error) {
+) (dto.UserResponse, error) {
 	if id <= 0 {
-		return nil, ErrInvalidUserID
+		return dto.UserResponse{}, ErrInvalidUserID
 	}
 
 	if input.Email == nil && input.Role == nil {
-		return nil, ErrEmptyUpdate
+		return dto.UserResponse{}, ErrEmptyUpdate
 	}
 
 	existing, err := uc.repo.GetByID(ctx, id)
 	if err != nil {
-		return nil, fromRepository(err)
+		return dto.UserResponse{}, fromRepository(err)
+	}
+	if existing == nil {
+		return dto.UserResponse{}, ErrUserNotFound
 	}
 
 	targetEmail := existing.Email
@@ -96,7 +111,7 @@ func (uc *UserUseCase) Update(
 	if input.Email != nil {
 		normalizedEmail := strings.ToLower(strings.TrimSpace(*input.Email))
 		if !isValidEmail(normalizedEmail) {
-			return nil, ErrInvalidEmail
+			return dto.UserResponse{}, ErrInvalidEmail
 		}
 		targetEmail = normalizedEmail
 	}
@@ -104,7 +119,7 @@ func (uc *UserUseCase) Update(
 	if input.Role != nil {
 		trimmedRole := strings.TrimSpace(*input.Role)
 		if !IsValidRole(trimmedRole) {
-			return nil, ErrInvalidUserRole
+			return dto.UserResponse{}, ErrInvalidUserRole
 		}
 		if trimmedRole != existing.Role {
 			roleChanged = true
@@ -121,14 +136,14 @@ func (uc *UserUseCase) Update(
 
 	if roleChanged {
 		if err := uc.repo.UpdateAndRevokeTokens(ctx, userToUpdate, time.Now().UTC()); err != nil {
-			return nil, fromRepository(err)
+			return dto.UserResponse{}, fromRepository(err)
 		}
 	} else {
 		if err := uc.repo.Update(ctx, userToUpdate); err != nil {
-			return nil, fromRepository(err)
+			return dto.UserResponse{}, fromRepository(err)
 		}
 	}
 
 	userToUpdate.PasswordHash = ""
-	return userToUpdate, nil
+	return mapper.ToUserResponse(*userToUpdate), nil
 }

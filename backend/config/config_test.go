@@ -1350,7 +1350,7 @@ func TestLoadDatabaseURL(t *testing.T) {
 	})
 
 	// Only DATABASE_URL is set: the server's Load must still fail in deployed
-	// environments, while LoadDatabaseURL (used by cmd/createadmin) succeeds.
+	// environments, while LoadDatabaseURL on its own succeeds.
 	for _, env := range []string{"staging", "production"} {
 		t.Run("does not require server settings in "+env, func(t *testing.T) {
 			setBaseEnv(t)

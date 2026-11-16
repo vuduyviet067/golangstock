@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"gostock/internal/domain"
+	"gostock/internal/dto"
 )
 
 type fakeProductRepository struct {
@@ -32,6 +33,20 @@ type fakeProductRepository struct {
 	createdProduct domain.Product
 	// actorID records the actor passed to Create, StockIn or StockOut.
 	actorID int64
+
+	// createID is the ID Create assigns, as the database does; createErr,
+	// updateErr and stockErr are returned by Create, Update and
+	// StockIn/StockOut.
+	createID  int64
+	createErr error
+	updateErr error
+	stockErr  error
+	// listProducts and listTotal are returned by List, with listErr.
+	listProducts []domain.Product
+	listTotal    int64
+	listErr      error
+	// stockProduct is returned by StockIn and StockOut.
+	stockProduct *domain.Product
 }
 
 // testActorID is the authenticated user used by stock tests.
@@ -53,6 +68,10 @@ func (f *fakeProductRepository) Create(
 	f.createCalled = true
 	f.createdProduct = *product
 	f.actorID = actorID
+	if f.createErr != nil {
+		return f.createErr
+	}
+	product.ID = f.createID
 	return nil
 }
 
@@ -63,6 +82,9 @@ func (f *fakeProductRepository) Update(
 ) error {
 	f.updateCalled = true
 	f.updateMinimumStock = minimumStock
+	if f.updateErr != nil {
+		return f.updateErr
+	}
 	product.Quantity = f.storedQuantity
 	product.MinimumStock = f.storedMinimumStock
 	if minimumStock != nil {
@@ -85,7 +107,7 @@ func (f *fakeProductRepository) List(
 	sortBy, order string,
 ) ([]domain.Product, int64, error) {
 	f.listCalled = true
-	return nil, 0, nil
+	return f.listProducts, f.listTotal, f.listErr
 }
 
 func (f *fakeProductRepository) StockIn(
@@ -96,7 +118,7 @@ func (f *fakeProductRepository) StockIn(
 ) (*domain.Product, error) {
 	f.stockInCalled = true
 	f.actorID = actorID
-	return nil, nil
+	return f.stockProduct, f.stockErr
 }
 
 func (f *fakeProductRepository) StockOut(
@@ -107,7 +129,7 @@ func (f *fakeProductRepository) StockOut(
 ) (*domain.Product, error) {
 	f.stockOutCalled = true
 	f.actorID = actorID
-	return nil, nil
+	return f.stockProduct, f.stockErr
 }
 func TestGetByIDSuccess(t *testing.T) {
 	expected := &domain.Product{
@@ -126,8 +148,9 @@ func TestGetByIDSuccess(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if got != expected {
-		t.Fatalf("expected product %v, got %v", expected, got)
+	want := dto.ProductResponse{ID: 1, SKU: "SKU001", Name: "Keyboard", Price: 500000, Quantity: 10, MinimumStock: 0}
+	if got == nil || *got != want {
+		t.Fatalf("expected product %+v, got %+v", want, got)
 	}
 
 	if !repo.called {
@@ -149,18 +172,16 @@ func TestGetByIDInvalidID(t *testing.T) {
 	}
 }
 
+// The input is a value since Step 5.4A, so the former "nil product" case
+// cannot occur any more.
 func TestCreateInvalidProduct(t *testing.T) {
 	tests := []struct {
-		name    string
-		product *domain.Product
+		name string
+		in   dto.CreateProductInput
 	}{
 		{
-			name:    "nil product",
-			product: nil,
-		},
-		{
 			name: "empty SKU",
-			product: &domain.Product{
+			in: dto.CreateProductInput{
 				SKU:      " ",
 				Name:     "Keyboard",
 				Price:    100,
@@ -169,7 +190,7 @@ func TestCreateInvalidProduct(t *testing.T) {
 		},
 		{
 			name: "negative price",
-			product: &domain.Product{
+			in: dto.CreateProductInput{
 				SKU:      "SKU001",
 				Name:     "Keyboard",
 				Price:    -1,
@@ -178,7 +199,7 @@ func TestCreateInvalidProduct(t *testing.T) {
 		},
 		{
 			name: "negative quantity",
-			product: &domain.Product{
+			in: dto.CreateProductInput{
 				SKU:      "SKU001",
 				Name:     "Keyboard",
 				Price:    100,
@@ -187,22 +208,22 @@ func TestCreateInvalidProduct(t *testing.T) {
 		},
 		{
 			name: "negative minimum stock",
-			product: &domain.Product{
+			in: dto.CreateProductInput{
 				SKU:          "SKU001",
 				Name:         "Keyboard",
 				Price:        100,
 				Quantity:     10,
-				MinimumStock: -1,
+				MinimumStock: intPtr(-1),
 			},
 		},
 		{
 			name: "minimum stock above INTEGER range",
-			product: &domain.Product{
+			in: dto.CreateProductInput{
 				SKU:          "SKU001",
 				Name:         "Keyboard",
 				Price:        100,
 				Quantity:     10,
-				MinimumStock: math.MaxInt32 + 1,
+				MinimumStock: intPtr(math.MaxInt32 + 1),
 			},
 		},
 	}
@@ -212,7 +233,7 @@ func TestCreateInvalidProduct(t *testing.T) {
 			repo := &fakeProductRepository{}
 			uc := NewProductUseCase(repo)
 
-			err := uc.Create(context.Background(), tt.product, testActorID)
+			_, err := uc.Create(context.Background(), tt.in, testActorID)
 
 			if !errors.Is(err, ErrInvalidProduct) {
 				t.Fatalf("expected ErrInvalidProduct, got %v", err)
@@ -228,15 +249,14 @@ func TestUpdateInvalidID(t *testing.T) {
 	repo := &fakeProductRepository{}
 	uc := NewProductUseCase(repo)
 
-	product := &domain.Product{
-		ID:       0,
-		SKU:      "SKU001",
-		Name:     "Keyboard",
-		Price:    100,
-		Quantity: 10,
+	in := dto.UpdateProductInput{
+		ID:    0,
+		SKU:   "SKU001",
+		Name:  "Keyboard",
+		Price: 100,
 	}
 
-	err := uc.Update(context.Background(), product, nil)
+	_, err := uc.Update(context.Background(), in)
 
 	if !errors.Is(err, ErrInvalidID) {
 		t.Fatalf("expected ErrInvalidID, got %v", err)
@@ -244,44 +264,56 @@ func TestUpdateInvalidID(t *testing.T) {
 	if repo.updateCalled {
 		t.Fatal("repository Update should not be called for invalid ID")
 	}
+
+	// The ID is checked first: with an invalid ID and invalid details the error
+	// is still ErrInvalidID (Step 5.4B pins this order).
+	_, err = uc.Update(context.Background(), dto.UpdateProductInput{ID: -1, SKU: " ", Name: "", Price: -1, MinimumStock: intPtr(-1)})
+	if !errors.Is(err, ErrInvalidID) {
+		t.Fatalf("invalid ID and invalid details: expected ErrInvalidID, got %v", err)
+	}
 }
 
-// TestUpdatePreservesStoredQuantity guards CR-15: a stale quantity on the
-// product passed to Update must not survive; the result carries the stock the
-// repository reports, and quantity is not validated as an update field.
+// TestUpdatePreservesStoredQuantity guards CR-15: Update can never carry a
+// quantity. Since Step 5.4B the input has no Quantity field at all (a stale
+// form value used to be passable on the *domain.Product), so the product
+// handed to the repository has quantity 0, which the repository does not
+// write, and the result carries the stock the repository reports.
 func TestUpdatePreservesStoredQuantity(t *testing.T) {
-	repo := &fakeProductRepository{storedQuantity: 7}
+	repo := &updateRecordingRepository{fakeProductRepository: fakeProductRepository{storedQuantity: 7}}
 	uc := NewProductUseCase(repo)
 
-	product := &domain.Product{
-		ID:       1,
-		SKU:      "SKU001",
-		Name:     "Renamed",
-		Price:    100,
-		Quantity: 10, // stale value from an old form
+	in := dto.UpdateProductInput{
+		ID:    1,
+		SKU:   "SKU001",
+		Name:  "Renamed",
+		Price: 100,
 	}
 
-	if err := uc.Update(context.Background(), product, nil); err != nil {
+	got, err := uc.Update(context.Background(), in)
+	if err != nil {
 		t.Fatalf("Update returned error: %v", err)
 	}
-	if !repo.updateCalled {
-		t.Fatal("repository Update was not called")
+	if len(repo.updated) != 1 {
+		t.Fatalf("repository Update called %d times, want 1", len(repo.updated))
 	}
-	if product.Quantity != 7 {
-		t.Errorf("quantity after Update = %d, want stored 7 (stale 10 must not survive)", product.Quantity)
+	if repo.updated[0].Quantity != 0 {
+		t.Errorf("repository received quantity %d, want 0 (Update carries no quantity)", repo.updated[0].Quantity)
+	}
+	if got.Quantity != 7 {
+		t.Errorf("quantity after Update = %d, want stored 7", got.Quantity)
 	}
 }
 
 func TestUpdateInvalidProduct(t *testing.T) {
 	tests := []struct {
-		name    string
-		product domain.Product
+		name string
+		in   dto.UpdateProductInput
 	}{
-		{"empty SKU", domain.Product{ID: 1, SKU: " ", Name: "Keyboard", Price: 100}},
-		{"empty name", domain.Product{ID: 1, SKU: "SKU001", Name: "", Price: 100}},
-		{"SKU too long", domain.Product{ID: 1, SKU: strings.Repeat("A", 51), Name: "Keyboard", Price: 100}},
-		{"name too long", domain.Product{ID: 1, SKU: "SKU001", Name: strings.Repeat("N", 201), Price: 100}},
-		{"negative price", domain.Product{ID: 1, SKU: "SKU001", Name: "Keyboard", Price: -0.01}},
+		{"empty SKU", dto.UpdateProductInput{ID: 1, SKU: " ", Name: "Keyboard", Price: 100}},
+		{"empty name", dto.UpdateProductInput{ID: 1, SKU: "SKU001", Name: "", Price: 100}},
+		{"SKU too long", dto.UpdateProductInput{ID: 1, SKU: strings.Repeat("A", 51), Name: "Keyboard", Price: 100}},
+		{"name too long", dto.UpdateProductInput{ID: 1, SKU: "SKU001", Name: strings.Repeat("N", 201), Price: 100}},
+		{"negative price", dto.UpdateProductInput{ID: 1, SKU: "SKU001", Name: "Keyboard", Price: -0.01}},
 	}
 
 	for _, tt := range tests {
@@ -289,8 +321,7 @@ func TestUpdateInvalidProduct(t *testing.T) {
 			repo := &fakeProductRepository{}
 			uc := NewProductUseCase(repo)
 
-			product := tt.product
-			err := uc.Update(context.Background(), &product, nil)
+			_, err := uc.Update(context.Background(), tt.in)
 
 			if !errors.Is(err, ErrInvalidProduct) {
 				t.Fatalf("expected ErrInvalidProduct, got %v", err)
@@ -304,20 +335,31 @@ func TestUpdateInvalidProduct(t *testing.T) {
 
 func intPtr(v int) *int { return &v }
 
+// TestCreateMinimumStock: an omitted minimum stock means 0 (decided by the use
+// case since Step 5.4A); 0 and other valid values are stored as given.
 func TestCreateMinimumStock(t *testing.T) {
-	for _, minimum := range []int{0, 5, math.MaxInt32} {
+	cases := map[string]*int{"omitted": nil, "zero": intPtr(0), "positive": intPtr(5), "INTEGER maximum": intPtr(math.MaxInt32)}
+	for label, input := range cases {
+		minimum := 0
+		if input != nil {
+			minimum = *input
+		}
 		repo := &fakeProductRepository{}
 		uc := NewProductUseCase(repo)
 
-		product := &domain.Product{SKU: "SKU001", Name: "Keyboard", Price: 100, Quantity: 10, MinimumStock: minimum}
-		if err := uc.Create(context.Background(), product, testActorID); err != nil {
-			t.Fatalf("minimum stock %d: Create returned error: %v", minimum, err)
+		in := dto.CreateProductInput{SKU: "SKU001", Name: "Keyboard", Price: 100, Quantity: 10, MinimumStock: input}
+		got, err := uc.Create(context.Background(), in, testActorID)
+		if err != nil {
+			t.Fatalf("%s minimum stock: Create returned error: %v", label, err)
 		}
 		if !repo.createCalled {
-			t.Fatalf("minimum stock %d: repository Create was not called", minimum)
+			t.Fatalf("%s minimum stock: repository Create was not called", label)
 		}
 		if repo.createdProduct.MinimumStock != minimum {
-			t.Errorf("repository received minimum stock %d, want %d", repo.createdProduct.MinimumStock, minimum)
+			t.Errorf("%s: repository received minimum stock %d, want %d", label, repo.createdProduct.MinimumStock, minimum)
+		}
+		if got.MinimumStock != minimum {
+			t.Errorf("%s: returned minimum stock %d, want %d", label, got.MinimumStock, minimum)
 		}
 	}
 }
@@ -341,8 +383,9 @@ func TestUpdateMinimumStock(t *testing.T) {
 			repo := &fakeProductRepository{storedMinimumStock: 8}
 			uc := NewProductUseCase(repo)
 
-			product := &domain.Product{ID: 1, SKU: "SKU001", Name: "Keyboard", Price: 100}
-			if err := uc.Update(context.Background(), product, tt.minimumStock); err != nil {
+			in := dto.UpdateProductInput{ID: 1, SKU: "SKU001", Name: "Keyboard", Price: 100, MinimumStock: tt.minimumStock}
+			got, err := uc.Update(context.Background(), in)
+			if err != nil {
 				t.Fatalf("Update returned error: %v", err)
 			}
 			if !repo.updateCalled {
@@ -351,8 +394,8 @@ func TestUpdateMinimumStock(t *testing.T) {
 			if repo.updateMinimumStock != tt.minimumStock {
 				t.Errorf("repository received minimumStock %v, want the caller's pointer %v", repo.updateMinimumStock, tt.minimumStock)
 			}
-			if product.MinimumStock != tt.wantStored {
-				t.Errorf("minimum stock after Update = %d, want %d", product.MinimumStock, tt.wantStored)
+			if got.MinimumStock != tt.wantStored {
+				t.Errorf("minimum stock after Update = %d, want %d", got.MinimumStock, tt.wantStored)
 			}
 		})
 	}
@@ -363,8 +406,8 @@ func TestUpdateInvalidMinimumStock(t *testing.T) {
 		repo := &fakeProductRepository{}
 		uc := NewProductUseCase(repo)
 
-		product := &domain.Product{ID: 1, SKU: "SKU001", Name: "Keyboard", Price: 100}
-		err := uc.Update(context.Background(), product, intPtr(minimum))
+		in := dto.UpdateProductInput{ID: 1, SKU: "SKU001", Name: "Keyboard", Price: 100, MinimumStock: intPtr(minimum)}
+		_, err := uc.Update(context.Background(), in)
 
 		if !errors.Is(err, ErrInvalidProduct) {
 			t.Fatalf("minimum stock %d: expected ErrInvalidProduct, got %v", minimum, err)
@@ -540,8 +583,8 @@ func TestStockOutInvalidParameters(t *testing.T) {
 // a missing actor before touching the repository, and pass a valid actor
 // through unchanged.
 func TestStockChangesRequireActor(t *testing.T) {
-	newProduct := func() *domain.Product {
-		return &domain.Product{SKU: "SKU001", Name: "Keyboard", Price: 100, Quantity: 5}
+	newProduct := func() dto.CreateProductInput {
+		return dto.CreateProductInput{SKU: "SKU001", Name: "Keyboard", Price: 100, Quantity: 5}
 	}
 
 	operations := []struct {
@@ -552,7 +595,8 @@ func TestStockChangesRequireActor(t *testing.T) {
 		{
 			name: "Create",
 			run: func(uc *ProductUseCase, actorID int64) error {
-				return uc.Create(context.Background(), newProduct(), actorID)
+				_, err := uc.Create(context.Background(), newProduct(), actorID)
+				return err
 			},
 			called: func(repo *fakeProductRepository) bool { return repo.createCalled },
 		},
@@ -609,7 +653,7 @@ func TestStockChangesRequireActor(t *testing.T) {
 func TestStockChangesValidateInputBeforeActor(t *testing.T) {
 	uc := NewProductUseCase(&fakeProductRepository{})
 
-	if err := uc.Create(context.Background(), &domain.Product{SKU: "", Name: "Keyboard"}, 0); !errors.Is(err, ErrInvalidProduct) {
+	if _, err := uc.Create(context.Background(), dto.CreateProductInput{SKU: "", Name: "Keyboard"}, 0); !errors.Is(err, ErrInvalidProduct) {
 		t.Errorf("Create error = %v, want ErrInvalidProduct", err)
 	}
 	if _, err := uc.StockIn(context.Background(), 0, 3, 0); !errors.Is(err, ErrInvalidID) {

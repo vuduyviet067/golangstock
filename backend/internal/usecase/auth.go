@@ -12,6 +12,7 @@ import (
 
 	"gostock/internal/domain"
 	"gostock/internal/dto"
+	"gostock/internal/mapper"
 	"gostock/internal/repository"
 
 	"golang.org/x/crypto/bcrypt"
@@ -67,19 +68,22 @@ func NewAuthUseCase(
 	}
 }
 
+// Register creates a user with the default role and returns it as the auth
+// response DTO (no password hash; created_at is RFC3339 to the second, or ""
+// when the repository sets none).
 func (uc *AuthUseCase) Register(
 	ctx context.Context,
 	email string,
 	password string,
-) (*domain.User, error) {
+) (dto.AuthUserResponse, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 
 	if !isValidEmail(email) {
-		return nil, ErrInvalidEmail
+		return dto.AuthUserResponse{}, ErrInvalidEmail
 	}
 
 	if len(password) < passwordMinLen || len(password) > passwordMaxLen {
-		return nil, ErrInvalidPassword
+		return dto.AuthUserResponse{}, ErrInvalidPassword
 	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword(
@@ -87,7 +91,7 @@ func (uc *AuthUseCase) Register(
 		bcrypt.DefaultCost,
 	)
 	if err != nil {
-		return nil, err
+		return dto.AuthUserResponse{}, err
 	}
 
 	user := &domain.User{
@@ -97,11 +101,11 @@ func (uc *AuthUseCase) Register(
 	}
 
 	if err := uc.users.Create(ctx, user); err != nil {
-		return nil, fromRepository(err)
+		return dto.AuthUserResponse{}, fromRepository(err)
 	}
 
 	user.PasswordHash = ""
-	return user, nil
+	return mapper.ToAuthUserResponse(*user), nil
 }
 
 func isValidEmail(email string) bool {
@@ -155,7 +159,7 @@ func (uc *AuthUseCase) Login(
 	}
 
 	// 1. Generate JWT Access Token
-	accessToken, accessExpiry, err := uc.tokenManager.GenerateAccessToken(user.ID, user.Email, user.Role)
+	accessToken, _, err := uc.tokenManager.GenerateAccessToken(user.ID, user.Email, user.Role)
 	if err != nil {
 		return nil, err
 	}
@@ -185,11 +189,9 @@ func (uc *AuthUseCase) Login(
 	user.PasswordHash = ""
 
 	return &dto.LoginResult{
-		User:                  user,
-		AccessToken:           accessToken,
-		RefreshToken:          rawRefreshToken,
-		AccessTokenExpiresAt:  accessExpiry,
-		RefreshTokenExpiresAt: refreshExpiry,
+		User:         mapper.ToAuthUserResponse(*user),
+		AccessToken:  accessToken,
+		RefreshToken: rawRefreshToken,
 	}, nil
 }
 
@@ -284,7 +286,7 @@ func (uc *AuthUseCase) Refresh(
 	user.PasswordHash = ""
 
 	// 4. Pre-generate new Access Token
-	newAccessToken, newAccessExpiry, err := uc.tokenManager.GenerateAccessToken(user.ID, user.Email, user.Role)
+	newAccessToken, _, err := uc.tokenManager.GenerateAccessToken(user.ID, user.Email, user.Role)
 	if err != nil {
 		return nil, err
 	}
@@ -336,11 +338,9 @@ func (uc *AuthUseCase) Refresh(
 	}
 
 	return &dto.LoginResult{
-		User:                  user,
-		AccessToken:           newAccessToken,
-		RefreshToken:          newRawRefreshToken,
-		AccessTokenExpiresAt:  newAccessExpiry,
-		RefreshTokenExpiresAt: newRefreshExpiry,
+		User:         mapper.ToAuthUserResponse(*user),
+		AccessToken:  newAccessToken,
+		RefreshToken: newRawRefreshToken,
 	}, nil
 }
 
@@ -380,4 +380,19 @@ func (uc *AuthUseCase) Authenticate(
 		Email: claims.Email,
 		Role:  claims.Role,
 	}, nil
+}
+
+// Me returns the /auth/me response for the authenticated principal set by
+// AuthMiddleware. It does not read the database: the principal comes from the
+// access token's claims and has no creation time, so created_at is "".
+func (uc *AuthUseCase) Me(principal domain.User) dto.AuthUserResponse {
+	return mapper.ToAuthUserResponse(principal)
+}
+
+// LogoutResponse is the data of every successful logout response,
+// {"message":"logged out"}. Logout succeeds even when Logout is not called
+// (no refresh cookie) or reports an already invalid token, so the payload
+// does not depend on its result.
+func (uc *AuthUseCase) LogoutResponse() dto.MessageResponse {
+	return mapper.ToLogoutResponse()
 }

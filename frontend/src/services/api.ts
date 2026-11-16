@@ -11,8 +11,13 @@ const BASE_URL = '/api/v1/products';
 /**
  * Fetch products with optional query parameters.
  * Backend returns directly `Product[]`.
+ * Pass a signal to cancel the request; the client then rejects with ApiError
+ * status 0, so check signal.aborted to tell a cancel from a network error.
  */
-export async function getProducts(params: ProductListParams = {}): Promise<Product[]> {
+export async function getProducts(
+  params: ProductListParams = {},
+  options: { signal?: AbortSignal } = {}
+): Promise<Product[]> {
   const searchParams = new URLSearchParams();
   if (params && typeof params === 'object') {
     const allowedKeys: (keyof ProductListParams)[] = ['q', 'page', 'limit', 'sortBy', 'order'];
@@ -29,6 +34,7 @@ export async function getProducts(params: ProductListParams = {}): Promise<Produ
 
   return request<Product[]>(url, {
     method: 'GET',
+    signal: options.signal,
   });
 }
 

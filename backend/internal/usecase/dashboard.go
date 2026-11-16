@@ -10,16 +10,8 @@ import (
 
 	"gostock/internal/domain"
 	"gostock/internal/dto"
+	"gostock/internal/mapper"
 	"gostock/internal/repository"
-)
-
-// Inventory statuses. With quantity >= 0 and minimum_stock >= 0 every product
-// is in exactly one: normal (quantity > minimum_stock), low_stock
-// (0 < quantity <= minimum_stock) or out_of_stock (quantity = 0).
-const (
-	InventoryStatusNormal     = "normal"
-	InventoryStatusLowStock   = "low_stock"
-	InventoryStatusOutOfStock = "out_of_stock"
 )
 
 // Stock movement chart granularities.
@@ -69,8 +61,18 @@ func NewDashboardUseCase(repo repository.DashboardRepository) *DashboardUseCase 
 }
 
 // Summary returns the summary cards and the status breakdown from one
-// database snapshot.
-func (uc *DashboardUseCase) Summary(ctx context.Context) (domain.InventorySummary, error) {
+// database snapshot, as the response DTO.
+func (uc *DashboardUseCase) Summary(ctx context.Context) (dto.DashboardSummaryResponse, error) {
+	s, err := uc.inventorySummary(ctx)
+	if err != nil {
+		return dto.DashboardSummaryResponse{}, err
+	}
+	return mapper.ToDashboardSummaryResponse(s), nil
+}
+
+// inventorySummary reads the summary and checks that the status counts add
+// up to the product total.
+func (uc *DashboardUseCase) inventorySummary(ctx context.Context) (domain.InventorySummary, error) {
 	s, err := uc.repo.InventorySummary(ctx)
 	if err != nil {
 		return domain.InventorySummary{}, fromRepository(err)
@@ -93,7 +95,22 @@ func (uc *DashboardUseCase) Summary(ctx context.Context) (domain.InventorySummar
 // database, so the range and the buckets use the same time zone rules
 // (time.Date would pick an arbitrary instant for a skipped or repeated
 // midnight).
+//
+// The chart is returned as the response DTO.
 func (uc *DashboardUseCase) StockMovementChart(
+	ctx context.Context,
+	q dto.StockMovementChartQuery,
+) (dto.StockMovementChartResponse, error) {
+	chart, err := uc.stockMovementChart(ctx, q)
+	if err != nil {
+		return dto.StockMovementChartResponse{}, err
+	}
+	return mapper.ToStockMovementChartResponse(chart), nil
+}
+
+// stockMovementChart validates the query, reads the buckets and fills every
+// period of the range; see StockMovementChart.
+func (uc *DashboardUseCase) stockMovementChart(
 	ctx context.Context,
 	q dto.StockMovementChartQuery,
 ) (domain.StockMovementChart, error) {
