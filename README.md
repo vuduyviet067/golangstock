@@ -491,6 +491,24 @@ go build ./...
 
 The test suite covers configuration validation, domain and use-case behavior, HTTP handlers and middleware, application lifecycle, and PostgreSQL repository behavior.
 
+### Embedded time zone database
+
+The dashboard validates the `tz` query parameter with Go's `time.LoadLocation`, and the frontend always sends `Asia/Ho_Chi_Minh`. Go reads time zones from the host (the `ZONEINFO` variable, the system zoneinfo directories on Unix, and the Go installation's `lib/time/zoneinfo.zip`). A host with none of them, such as a minimal container or a Windows server without Go installed, would reject every valid time zone with `400 invalid query parameters`.
+
+`main.go` therefore imports `time/tzdata`, which embeds a copy of the IANA time zone database in the executable (about 400 KB). Go still uses the host's zoneinfo when it exists; the embedded copy is only the fallback, so dates, ranges, buckets and daylight saving time are computed exactly as before. `TestProductionExecutableEmbedsTZData` in `main_test.go` fails if `time/tzdata` is no longer linked into the executable.
+
+Smoke test, from `backend/`: build the `main` package's test binary with `-trimpath`, so it has no Go installation path built in, then run it without any zoneinfo source. It links the same packages as the server and sends `Asia/Ho_Chi_Minh` and `UTC` through the real dashboard validation:
+
+```bash
+go test -c -trimpath -o /tmp/gostock-main.test .
+env -u ZONEINFO GOROOT=/nonexistent /tmp/gostock-main.test \
+  -test.run TestDashboardTimezonesLoadWithProductionImports -test.v
+```
+
+The test must report `PASS`. Without the embedded database it fails with `tz must be an IANA time zone name`. This hides every zoneinfo source on Windows. On Linux, Go also reads `/usr/share/zoneinfo`, so run the binary in a container image that has no zoneinfo instead.
+
+The embedded database only serves Go. PostgreSQL converts timestamps with its own time zone database (`AT TIME ZONE`), which this does not change; the PostgreSQL server must also recognize the time zones the dashboard uses.
+
 ### Configure the integration test database
 
 PostgreSQL integration tests use a dedicated test database configured by `TEST_DATABASE_URL`. They never read `DATABASE_URL`, so loading `.env` cannot point them at the development database.

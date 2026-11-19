@@ -7,6 +7,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	// Embedded IANA time zone database, used only when the host has no
+	// zoneinfo of its own: the dashboard's tz parameter (Asia/Ho_Chi_Minh from
+	// the frontend) must load on any deployment host. Guarded by main_test.go.
+	_ "time/tzdata"
 
 	"gostock/config"
 	"gostock/internal/app"
