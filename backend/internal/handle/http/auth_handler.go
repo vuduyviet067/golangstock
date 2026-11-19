@@ -1,0 +1,182 @@
+package http
+
+import (
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"time"
+
+	"gostock/internal/dto"
+	"gostock/internal/handle/http/response"
+	"gostock/internal/usecase"
+)
+
+type AuthHandler struct {
+	useCase *usecase.AuthUseCase
+	cookies *CookieManager
+}
+
+func NewAuthHandler(uc *usecase.AuthUseCase, cookies *CookieManager) *AuthHandler {
+	if cookies == nil {
+		cookies = NewCookieManager(false, http.SameSiteLaxMode, 15*time.Minute, 7*24*time.Hour)
+	}
+	return &AuthHandler{
+		useCase: uc,
+		cookies: cookies,
+	}
+}
+
+func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if !EnforceJSONContentType(w, r) {
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	var req dto.RegisterRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid JSON request")
+		return
+	}
+
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		response.Error(w, http.StatusBadRequest, "request must contain exactly one JSON object")
+		return
+	}
+
+	user, err := h.useCase.Register(r.Context(), req.Email, req.Password)
+	if err != nil {
+		WriteError(w, r, err)
+		return
+	}
+
+	response.Success(w, http.StatusCreated, "User registered successfully", user)
+}
+
+func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if !EnforceJSONContentType(w, r) {
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	var req dto.LoginRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid JSON request")
+		return
+	}
+
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		response.Error(w, http.StatusBadRequest, "request must contain exactly one JSON object")
+		return
+	}
+
+	result, err := h.useCase.Login(r.Context(), req.Email, req.Password)
+	if err != nil {
+		WriteError(w, r, err)
+		return
+	}
+
+	h.cookies.SetAuthCookies(w, result.AccessToken, result.RefreshToken)
+
+	response.Success(w, http.StatusOK, "Login successful", result.User)
+}
+
+func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	cookie, err := r.Cookie(RefreshTokenCookieName)
+	if err != nil || cookie.Value == "" {
+		response.Error(w, http.StatusUnauthorized, "refresh token required")
+		return
+	}
+
+	result, err := h.useCase.Refresh(r.Context(), cookie.Value)
+	if err != nil {
+		httpErr := MapError(err)
+		if httpErr.StatusCode == http.StatusUnauthorized {
+
+			h.cookies.ClearAuthCookies(w)
+		}
+
+		WriteError(w, r, httpErr)
+		return
+	}
+
+	h.cookies.SetAuthCookies(w, result.AccessToken, result.RefreshToken)
+
+	response.Success(w, http.StatusOK, "Token refreshed successfully", result.User)
+}
+
+func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	user, ok := CurrentUser(r.Context())
+	if !ok || user == nil {
+		response.Error(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	response.Success(w, http.StatusOK, "User profile retrieved successfully", h.useCase.Me(*user))
+}
+
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	h.cookies.ClearAuthCookies(w)
+
+	cookie, err := r.Cookie(RefreshTokenCookieName)
+	if err == nil && cookie.Value != "" {
+		logoutErr := h.useCase.Logout(r.Context(), cookie.Value)
+		if logoutErr != nil {
+			switch {
+			case errors.Is(logoutErr, usecase.ErrInvalidSession),
+				errors.Is(logoutErr, usecase.ErrRefreshTokenNotFound),
+				errors.Is(logoutErr, usecase.ErrRefreshTokenRevoked),
+				errors.Is(logoutErr, usecase.ErrRefreshTokenExpired),
+				errors.Is(logoutErr, usecase.ErrInvalidRefreshToken),
+				errors.Is(logoutErr, usecase.ErrRefreshTokenReused):
+				// Idempotent: token already invalid, revoked, expired, reused or missing is considered successful logout
+			default:
+				// Infrastructure or database failure: report 500 error, but cookies were already cleared
+				WriteError(w, r, logoutErr)
+				return
+			}
+		}
+	}
+
+	response.Success(w, http.StatusOK, "logged out", h.useCase.LogoutResponse())
+}
