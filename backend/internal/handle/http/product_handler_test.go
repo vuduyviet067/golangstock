@@ -263,14 +263,14 @@ func TestGetByID(t *testing.T) {
 			}
 			handler := newTestHandler(repo)
 
-			req := httptest.NewRequest(
+			req := newRequest(
 				tt.method,
 				tt.path,
 				strings.NewReader(""),
 			)
 			rec := httptest.NewRecorder()
 
-			handler.GetByID(rec, req)
+			serveRoute(rec, req, http.MethodGet, "/api/v1/products/{id}", handler.GetByID)
 
 			if rec.Code != tt.wantStatus {
 				t.Errorf(
@@ -365,10 +365,10 @@ func TestList(t *testing.T) {
 			}
 			handler := newTestHandler(repo)
 
-			req := httptest.NewRequest(tt.method, tt.path, nil)
+			req := newRequest(tt.method, tt.path, nil)
 			rec := httptest.NewRecorder()
 
-			handler.List(rec, req)
+			serveRoute(rec, req, http.MethodGet, "/api/v1/products", handler.List)
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf(
@@ -473,7 +473,7 @@ func TestCreate(t *testing.T) {
 			}
 			handler := newTestHandler(repo)
 
-			req := httptest.NewRequest(
+			req := newRequest(
 				tt.method,
 				"/api/v1/products",
 				strings.NewReader(tt.body),
@@ -481,7 +481,7 @@ func TestCreate(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
-			handler.Create(rec, withTestUser(req))
+			serveRoute(rec, withTestUser(req), http.MethodPost, "/api/v1/products", handler.Create)
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf(
@@ -627,7 +627,7 @@ func TestUpdate(t *testing.T) {
 			}
 			handler := newTestHandler(repo)
 
-			req := httptest.NewRequest(
+			req := newRequest(
 				tt.method,
 				tt.path,
 				strings.NewReader(tt.body),
@@ -635,7 +635,7 @@ func TestUpdate(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
-			handler.Update(rec, req)
+			serveRoute(rec, req, http.MethodPut, "/api/v1/products/{id}", handler.Update)
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf(
@@ -710,7 +710,7 @@ func TestUpdateRejectsQuantity(t *testing.T) {
 			repo := &fakeProductRepository{}
 			handler := newTestHandler(repo)
 
-			req := httptest.NewRequest(http.MethodPut, "/api/v1/products/1", strings.NewReader(body))
+			req := newRequest(http.MethodPut, "/api/v1/products/1", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
@@ -719,7 +719,7 @@ func TestUpdateRejectsQuantity(t *testing.T) {
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
 			}
-			wantBody := `{"success":false,"message":"quantity cannot be updated; use stock-in or stock-out","data":null}`
+			wantBody := `{"success":false,"code":"VALIDATION_ERROR","message":"quantity cannot be updated; use stock-in or stock-out","data":null}`
 			if got := strings.TrimSpace(rec.Body.String()); got != wantBody {
 				t.Errorf("body = %s, want %s", got, wantBody)
 			}
@@ -736,7 +736,7 @@ func TestUpdateReportsStoredQuantity(t *testing.T) {
 	repo := &fakeProductRepository{storedQuantity: 7}
 	handler := newTestHandler(repo)
 
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/products/1",
+	req := newRequest(http.MethodPut, "/api/v1/products/1",
 		strings.NewReader(`{"id":99,"sku":"SKU001","name":"Renamed","price":100}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -818,7 +818,7 @@ func TestUpdateMinimumStock(t *testing.T) {
 			repo := &fakeProductRepository{storedMinimumStock: 8, storedQuantity: 4}
 			handler := newTestHandler(repo)
 
-			req := httptest.NewRequest(http.MethodPut, "/api/v1/products/1", strings.NewReader(tt.body))
+			req := newRequest(http.MethodPut, "/api/v1/products/1", strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
@@ -877,7 +877,7 @@ func TestCreateMinimumStock(t *testing.T) {
 			repo := &fakeProductRepository{createID: 10}
 			handler := newTestHandler(repo)
 
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/products", strings.NewReader(tt.body))
+			req := newRequest(http.MethodPost, "/api/v1/products", strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
@@ -977,10 +977,10 @@ func TestDelete(t *testing.T) {
 			}
 			handler := newTestHandler(repo)
 
-			req := httptest.NewRequest(tt.method, tt.path, nil)
+			req := newRequest(tt.method, tt.path, nil)
 			rec := httptest.NewRecorder()
 
-			handler.Delete(rec, req)
+			serveRoute(rec, req, http.MethodDelete, "/api/v1/products/{id}", handler.Delete)
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf(
@@ -1112,7 +1112,7 @@ func TestStockIn(t *testing.T) {
 			}
 
 			handler := newTestHandler(repo)
-			req := httptest.NewRequest(
+			req := newRequest(
 				tt.method,
 				tt.path,
 				strings.NewReader(tt.body),
@@ -1120,7 +1120,7 @@ func TestStockIn(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
-			handler.StockIn(rec, withTestUser(req))
+			serveRoute(rec, withTestUser(req), http.MethodPost, "/api/v1/products/{id}/stock-in", handler.StockIn)
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf(
@@ -1250,11 +1250,11 @@ func TestStockOut(t *testing.T) {
 			}
 			handler := newTestHandler(repo)
 
-			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			req := newRequest(tt.method, tt.path, strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
-			handler.StockOut(rec, withTestUser(req))
+			serveRoute(rec, withTestUser(req), http.MethodPost, "/api/v1/products/{id}/stock-out", handler.StockOut)
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d; body = %s",
@@ -1294,7 +1294,7 @@ func TestStockChangesUseAuthenticatedActor(t *testing.T) {
 	}
 
 	newRequest := func(path, body string) *http.Request {
-		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req := newRequest(http.MethodPost, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		return req
 	}
@@ -1309,7 +1309,7 @@ func TestStockChangesUseAuthenticatedActor(t *testing.T) {
 			if rec.Code != http.StatusUnauthorized {
 				t.Fatalf("status = %d, want 401; body = %s", rec.Code, rec.Body.String())
 			}
-			wantBody := `{"success":false,"message":"authentication required","data":null}`
+			wantBody := `{"success":false,"code":"UNAUTHENTICATED","message":"authentication required","data":null}`
 			if got := strings.TrimSpace(rec.Body.String()); got != wantBody {
 				t.Errorf("body = %s, want %s", got, wantBody)
 			}
@@ -1373,7 +1373,7 @@ func TestStockChangesKeepInputErrorsBeforeAuth(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &fakeProductRepository{}
-			req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
+			req := newRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 

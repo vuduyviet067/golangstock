@@ -4,7 +4,7 @@ import (
 	"mime"
 	"net/http"
 
-	"gostock/internal/handle/http/response"
+	"gostock/pkg/response"
 )
 
 const jsonMediaType = "application/json"
@@ -17,13 +17,13 @@ const jsonMediaType = "application/json"
 func EnforceJSONContentType(w http.ResponseWriter, r *http.Request) bool {
 	ct := r.Header.Get("Content-Type")
 	if ct == "" {
-		response.Error(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+		response.Error(w, http.StatusUnsupportedMediaType, response.CodeUnsupportedMediaType, "Content-Type must be application/json")
 		return false
 	}
 
 	mediaType, _, err := mime.ParseMediaType(ct)
 	if err != nil || mediaType != jsonMediaType {
-		response.Error(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+		response.Error(w, http.StatusUnsupportedMediaType, response.CodeUnsupportedMediaType, "Content-Type must be application/json")
 		return false
 	}
 

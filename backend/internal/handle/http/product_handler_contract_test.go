@@ -126,7 +126,7 @@ func TestProductEndpoints_JSONContract(t *testing.T) {
 				t.Fatalf("no handler for %s %s", tt.method, tt.path)
 			}
 
-			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			req := newRequest(tt.method, tt.path, strings.NewReader(tt.body))
 			if tt.body != "" {
 				req.Header.Set("Content-Type", "application/json")
 			}

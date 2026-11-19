@@ -17,10 +17,20 @@ import (
 )
 
 func main() {
+	// `gostock admin ...`: the server-side admin command (internal/app).
+	if len(os.Args) > 1 && os.Args[1] == "admin" {
+		os.Exit(runAdmin())
+	}
 	if err := run(); err != nil {
 		log.Printf("application error: %v", err)
 		os.Exit(1)
 	}
+}
+
+func runAdmin() int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return app.RunAdminCommand(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr)
 }
 
 func run() error {

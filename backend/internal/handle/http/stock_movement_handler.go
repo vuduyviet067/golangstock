@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
+	"gostock/pkg/response"
 )
 
 // StockMovementHandler serves the read-only stock movement history.
@@ -32,7 +32,7 @@ func parsePagination(w http.ResponseWriter, r *http.Request) (int, int, bool) {
 	if rawPage := query.Get("page"); rawPage != "" {
 		parsed, err := strconv.Atoi(rawPage)
 		if err != nil {
-			response.Error(w, http.StatusBadRequest, "invalid page")
+			response.Error(w, http.StatusBadRequest, codeInvalidPage, "invalid page")
 			return 0, 0, false
 		}
 		page = parsed
@@ -41,7 +41,7 @@ func parsePagination(w http.ResponseWriter, r *http.Request) (int, int, bool) {
 	if rawLimit := query.Get("limit"); rawLimit != "" {
 		parsed, err := strconv.Atoi(rawLimit)
 		if err != nil {
-			response.Error(w, http.StatusBadRequest, "invalid limit")
+			response.Error(w, http.StatusBadRequest, codeInvalidLimit, "invalid limit")
 			return 0, 0, false
 		}
 		limit = parsed
@@ -52,22 +52,15 @@ func parsePagination(w http.ResponseWriter, r *http.Request) (int, int, bool) {
 
 // ListByProduct serves GET /api/v1/products/{id}/movements.
 func (h *StockMovementHandler) ListByProduct(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/products/")
-	rawID = strings.TrimSuffix(rawID, "/movements")
+	rawID := pathParam(r, "id")
 	if rawID == "" || strings.Contains(rawID, "/") {
-		response.Error(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")
 		return
 	}
 
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil || id <= 0 {
-		response.Error(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")
 		return
 	}
 
@@ -87,12 +80,6 @@ func (h *StockMovementHandler) ListByProduct(w http.ResponseWriter, r *http.Requ
 
 // List serves GET /api/v1/stock-movements. The router restricts it to admins.
 func (h *StockMovementHandler) List(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	page, limit, ok := parsePagination(w, r)
 	if !ok {
 		return

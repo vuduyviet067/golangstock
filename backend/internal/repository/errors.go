@@ -31,6 +31,16 @@ var (
 )
 
 var (
+	// ErrWoodTypeNotFound means no wood type has the given ID.
+	ErrWoodTypeNotFound = errors.New("wood type not found")
+	// ErrSupplierNotFound means no supplier has the given ID.
+	ErrSupplierNotFound = errors.New("supplier not found")
+	// ErrInUse means a row cannot be deleted because another row still
+	// references it (foreign key violation, SQLSTATE 23503).
+	ErrInUse = errors.New("record is in use")
+)
+
+var (
 	// ErrRefreshTokenNotFound means no refresh token has the given hash.
 	ErrRefreshTokenNotFound = errors.New("refresh token not found")
 	// ErrRefreshTokenRevoked, ErrRefreshTokenExpired and ErrRefreshTokenReused

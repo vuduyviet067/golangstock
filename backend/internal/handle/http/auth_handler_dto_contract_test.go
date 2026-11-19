@@ -30,7 +30,7 @@ func (r *failingLookupUserRepo) GetByEmail(ctx context.Context, email string) (*
 }
 
 func TestAuthContract_ServerErrorsKeepCookies(t *testing.T) {
-	const internal = `{"success":false,"message":"Internal server error","data":null}`
+	const internal = `{"success":false,"code":"INTERNAL_ERROR","message":"Internal server error","data":null}`
 	dbErr := errors.New("connection reset")
 
 	t.Run("register repository error", func(t *testing.T) {
@@ -69,16 +69,16 @@ func TestAuthContract_RefreshFailures(t *testing.T) {
 	}{
 		{"revoked token", &mockUserRepo{user: user},
 			&domain.RefreshToken{ID: 1, UserID: 9, ExpiresAt: now.Add(time.Hour), RevokedAt: &longAgo},
-			http.StatusUnauthorized, `{"success":false,"message":"invalid or expired refresh token","data":null}`, true},
+			http.StatusUnauthorized, `{"success":false,"code":"INVALID_REFRESH_TOKEN","message":"invalid or expired refresh token","data":null}`, true},
 		{"reused token after the grace period", &mockUserRepo{user: user},
 			&domain.RefreshToken{ID: 1, UserID: 9, ExpiresAt: now.Add(time.Hour), RevokedAt: &longAgo, ReplacedByHash: &replaced},
-			http.StatusUnauthorized, `{"success":false,"message":"invalid or expired refresh token","data":null}`, true},
+			http.StatusUnauthorized, `{"success":false,"code":"INVALID_REFRESH_TOKEN","message":"invalid or expired refresh token","data":null}`, true},
 		{"deleted user", &mockUserRepo{},
 			&domain.RefreshToken{ID: 1, UserID: 9, ExpiresAt: now.Add(time.Hour)},
-			http.StatusUnauthorized, `{"success":false,"message":"invalid or expired session","data":null}`, true},
+			http.StatusUnauthorized, `{"success":false,"code":"INVALID_SESSION","message":"invalid or expired session","data":null}`, true},
 		{"concurrent refresh within the grace period", &mockUserRepo{user: user},
 			&domain.RefreshToken{ID: 1, UserID: 9, ExpiresAt: now.Add(time.Hour), RevokedAt: &justRotated, ReplacedByHash: &replaced},
-			http.StatusConflict, `{"success":false,"message":"concurrent refresh in progress","data":null}`, false},
+			http.StatusConflict, `{"success":false,"code":"CONCURRENT_REFRESH","message":"concurrent refresh in progress","data":null}`, false},
 	}
 
 	for _, tt := range tests {
@@ -112,9 +112,9 @@ func TestAuthContract_WrongMethods(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			tc.serve(rec, httptest.NewRequest(tc.method, "/api/v1/auth/"+tc.name, nil))
+			serveRoute(rec, httptest.NewRequest(tc.method, "/api/v1/auth/"+tc.name, nil), tc.allow, "/api/v1/auth/"+tc.name, tc.serve)
 
-			contractAssertResponse(t, rec, http.StatusMethodNotAllowed, `{"success":false,"message":"method not allowed","data":null}`)
+			contractAssertResponse(t, rec, http.StatusMethodNotAllowed, `{"success":false,"code":"METHOD_NOT_ALLOWED","message":"method not allowed","data":null}`)
 			contractAssertNoCookies(t, rec)
 			if got := rec.Header().Get("Allow"); got != tc.allow {
 				t.Errorf("Allow = %q, want %q", got, tc.allow)
@@ -127,7 +127,7 @@ func TestAuthContract_WrongMethods(t *testing.T) {
 // same paths and lifetimes are kept, and the body is unchanged.
 func TestAuthContract_SecureStrictCookies(t *testing.T) {
 	newHandler := func(users *mockUserRepo, tokens *mockRefreshRepo) *AuthHandler {
-		uc := usecase.NewAuthUseCase(users, tokens, &mockTokenMgr{}, 15*time.Minute, 7*24*time.Hour, 15*time.Second)
+		uc := usecase.NewAuthUseCase(users, tokens, &mockTokenMgr{}, 15*time.Minute, 7*24*time.Hour, 15*time.Second, usecase.WithRegistration(true))
 		return NewAuthHandler(uc, NewCookieManager(true, http.SameSiteStrictMode, 15*time.Minute, 7*24*time.Hour))
 	}
 

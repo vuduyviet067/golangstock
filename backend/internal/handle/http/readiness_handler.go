@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"gostock/internal/handle/http/response"
+	"gostock/pkg/response"
 )
 
 // readinessPingTimeout bounds the database ping of one readiness check.
@@ -31,18 +31,12 @@ func (h *ReadinessHandler) ServeHTTP(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	ctx, cancel := context.WithTimeout(r.Context(), readinessPingTimeout)
 	defer cancel()
 
 	if err := h.db.PingContext(ctx); err != nil {
 		logPingFailure(r, ctx, err)
-		response.Error(w, http.StatusServiceUnavailable, "database disconnected")
+		response.Error(w, http.StatusServiceUnavailable, response.CodeServiceUnavailable, "database disconnected")
 		return
 	}
 

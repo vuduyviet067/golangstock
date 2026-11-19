@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"gostock/internal/domain"
-	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
+	"gostock/pkg/response"
 )
 
 type Authenticator interface {
@@ -24,13 +24,13 @@ func AuthMiddleware(auth Authenticator) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := extractToken(r)
 			if token == "" {
-				response.Error(w, http.StatusUnauthorized, "authentication required")
+				response.Error(w, http.StatusUnauthorized, response.CodeUnauthenticated, "authentication required")
 				return
 			}
 
 			user, err := auth.Authenticate(r.Context(), token)
 			if err != nil || user == nil {
-				response.Error(w, http.StatusUnauthorized, "invalid or expired token")
+				response.Error(w, http.StatusUnauthorized, response.CodeUnauthenticated, "invalid or expired token")
 				return
 			}
 
@@ -70,12 +70,12 @@ func RequireRole(role string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user, ok := CurrentUser(r.Context())
 			if !ok || user == nil {
-				response.Error(w, http.StatusUnauthorized, "authentication required")
+				response.Error(w, http.StatusUnauthorized, response.CodeUnauthenticated, "authentication required")
 				return
 			}
 
 			if user.Role != role {
-				response.Error(w, http.StatusForbidden, fmt.Sprintf("forbidden: %s role required", role))
+				response.Error(w, http.StatusForbidden, response.CodeForbidden, fmt.Sprintf("forbidden: %s role required", role))
 				return
 			}
 

@@ -28,6 +28,11 @@ const (
 var dataStructExceptions = map[string]string{
 	"internal/platform/jwt.customClaims": "JWT wire-format claims private to the JWT adapter; it embeds " +
 		"jwt.RegisteredClaims, so moving it to internal/dto would make dto depend on the JWT library",
+	// The response envelope lives in the shared package pkg/response, which
+	// must not import gostock/internal (TD-06), so it cannot use internal/dto.
+	"pkg/response.APIResponse":    "the {success, code, message, data} envelope of every JSON response (pkg/response imports no internal package)",
+	"pkg/response.PaginatedData":  "the {items, pagination} data of response.Paginated (pkg/response imports no internal package)",
+	"pkg/response.PaginationMeta": "the pagination metadata of response.Paginated (pkg/response imports no internal package)",
 }
 
 // structDecl is a struct type found in Go source.

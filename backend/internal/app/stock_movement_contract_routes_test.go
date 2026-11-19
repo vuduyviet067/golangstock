@@ -21,8 +21,8 @@ func TestStockMovementRoutes_ExactBodies(t *testing.T) {
 		productHistory = "/api/v1/products/1/movements"
 		globalHistory  = "/api/v1/stock-movements"
 
-		unauthenticated = `{"success":false,"message":"authentication required","data":null}`
-		forbidden       = `{"success":false,"message":"forbidden: admin role required","data":null}`
+		unauthenticated = `{"success":false,"code":"UNAUTHENTICATED","message":"authentication required","data":null}`
+		forbidden       = `{"success":false,"code":"FORBIDDEN","message":"forbidden: admin role required","data":null}`
 	)
 	emptyPage := func(page, limit int) string {
 		return `{"success":true,"message":"Stock movements retrieved successfully","data":{"items":[],"pagination":{"page":` +
@@ -42,16 +42,16 @@ func TestStockMovementRoutes_ExactBodies(t *testing.T) {
 		{"user product history", productHistory, "user-token", http.StatusOK, emptyPage(1, 10)},
 		{"user product history with paging", productHistory + "?page=3&limit=25", "user-token", http.StatusOK, emptyPage(3, 25)},
 		{"user product history invalid page", productHistory + "?page=0", "user-token", http.StatusBadRequest,
-			`{"success":false,"message":"invalid page","data":null}`},
+			`{"success":false,"code":"INVALID_PAGE","message":"invalid page","data":null}`},
 		{"user global history", globalHistory, "user-token", http.StatusForbidden, forbidden},
 		{"user global history invalid query", globalHistory + "?page=abc&limit=999", "user-token", http.StatusForbidden, forbidden},
 
 		{"admin product history", productHistory, "admin-token", http.StatusOK, emptyPage(1, 10)},
 		{"admin global history", globalHistory + "?page=2&limit=100", "admin-token", http.StatusOK, emptyPage(2, 100)},
 		{"admin global history invalid page", globalHistory + "?page=abc", "admin-token", http.StatusBadRequest,
-			`{"success":false,"message":"invalid page","data":null}`},
+			`{"success":false,"code":"INVALID_PAGE","message":"invalid page","data":null}`},
 		{"admin global history invalid limit", globalHistory + "?limit=101", "admin-token", http.StatusBadRequest,
-			`{"success":false,"message":"invalid limit","data":null}`},
+			`{"success":false,"code":"INVALID_LIMIT","message":"invalid limit","data":null}`},
 	}
 
 	for _, tt := range tests {

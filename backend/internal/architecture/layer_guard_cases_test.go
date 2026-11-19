@@ -17,8 +17,6 @@ import (
 // only because ChartResponse contains it.
 const (
 	guardDTO = "package dto\n" +
-		"type APIResponse struct{ Success bool; Data any }\n" +
-		"type PaginatedData struct{ Items any }\n" +
 		"type ProductResponse struct{ ID int64 }\n" +
 		"type ChartResponse struct{ Points []ChartPoint }\n" +
 		"type ChartPoint struct{ Period string }\n" +
@@ -131,10 +129,10 @@ func TestHandlerResponseConstructionGuard(t *testing.T) {
 			"func f() { var req dto.CreateProductRequest; _ = req; _ = dto.ChartQuery{From: \"x\"} }\n")},
 		{name: "passing a use case DTO through", files: handlerFiles(dtoImportLine +
 			"func f(p dto.ProductResponse) any { return p }\n")},
-		{name: "envelope types are not response mapping", files: handlerFiles(dtoImportLine +
-			"func f() { _ = dto.APIResponse{Success: true}; _ = dto.PaginatedData{} }\n")},
+		{name: "envelope types of pkg/response are not response DTOs", files: handlerFiles("import \"gostock/pkg/response\"\n" +
+			"func f() { _ = response.APIResponse{Success: true}; _ = response.PaginatedData{} }\n")},
 		{name: "response helper builds envelopes", files: withFiles(handlerFiles(""), map[string]string{
-			"internal/handle/http/response/r.go": "package response\n" + dtoImportLine + "func f() { _ = dto.APIResponse{} }\n",
+			"pkg/response/r.go": "package response\ntype APIResponse struct{ Success bool }\nfunc f() { _ = APIResponse{} }\n",
 		})},
 		{name: "handler tests may build DTOs", files: withFiles(handlerFiles(""), map[string]string{
 			"internal/handle/http/h_test.go": "package http\n" + dtoImportLine + "func f() { _ = dto.ProductResponse{} }\n",
@@ -163,6 +161,12 @@ func TestHandlerResponseConstructionGuard(t *testing.T) {
 			"func f() { var r dto.ProductResponse; r.ID = 1; _ = r }\n"), want: []string{"handler declares a variable of a response DTO"}},
 		{name: "conversion", files: handlerFiles(dtoImportLine +
 			"type view struct{ ID int64 }\nfunc f(v view) { _ = dto.ProductResponse(v) }\n"), want: []string{"handler converts to a response DTO"}},
+		// The envelope exception is gone: an envelope put back in dto is a
+		// response DTO like any other *Response type.
+		{name: "envelope declared in dto again", files: withFiles(handlerFiles(dtoImportLine+
+			"func f() { _ = dto.APIResponse{Success: true} }\n"), map[string]string{
+			"internal/dto/envelope.go": "package dto\ntype APIResponse struct{ Success bool }\n",
+		}), want: []string{"h.go:3:16: handler builds a response DTO"}},
 	}, check)
 }
 
@@ -305,6 +309,15 @@ func TestDomainDeclarationGuard(t *testing.T) {
 		{name: "test files may declare anything", files: map[string]string{
 			"internal/domain/d_test.go": "package domain\nfunc helper() {}\nvar x = 1\n",
 		}},
+		// Allowed (XG-04): named basic types and literal constants of them.
+		{name: "named basic types and their constants", files: domainFile(
+			"type Money int64\ntype Status string\ntype Role string\n" +
+				"const A Status = \"a\"\nconst B Money = 100\nconst Refund Money = -5\n" +
+				"const (\n\tRoleUser Role = \"user\"\n\tRoleAdmin Role = \"admin\"\n)\n")},
+		{name: "named basic type declared in another file of the package", files: map[string]string{
+			"internal/domain/money.go":  "package domain\ntype Money int64\n",
+			"internal/domain/limits.go": "package domain\nconst MaxLine Money = 1000000\n",
+		}},
 
 		// Rejected.
 		{name: "function", files: domainFile("func IsLow(q, m int) bool { return q <= m }\n"),
@@ -315,8 +328,34 @@ func TestDomainDeclarationGuard(t *testing.T) {
 			want: []string{"package variable Statuses"}},
 		{name: "interface", files: domainFile("type Repo interface{ Get() }\n"),
 			want: []string{"interface Repo"}},
-		{name: "non-struct named type", files: domainFile("type Role string\n"),
-			want: []string{"non-struct type Role"}},
+		{name: "method on a named basic type", files: domainFile("type Money int64\nfunc (m Money) Add(n Money) Money { return m + n }\n"),
+			want: []string{"method Money.Add"}},
+		{name: "function on a named basic type", files: domainFile("type Money int64\nfunc Sum(a, b Money) Money { return a + b }\n"),
+			want: []string{"function Sum"}},
+		{name: "package variable of a named basic type", files: domainFile("type Money int64\nvar Zero Money = 0\n"),
+			want: []string{"package variable Zero"}},
+		{name: "named non-basic types", files: domainFile("type Tags []string\ntype Ptr *int64\ntype Index map[string]int\n" +
+			"type Fn func()\ntype Ch chan int\ntype Arr [2]int\n"),
+			want: []string{"non-struct type Tags", "non-struct type Ptr", "non-struct type Index",
+				"non-struct type Fn", "non-struct type Ch", "non-struct type Arr"}},
+		{name: "alias of a basic type", files: domainFile("type Name = string\n"),
+			want: []string{"non-struct type Name"}},
+		{name: "type based on another package's type", files: domainFile("import \"time\"\ntype Wait time.Duration\n"),
+			want: []string{"non-struct type Wait"}},
+		{name: "type based on a named basic type", files: domainFile("type Money int64\ntype Price Money\n"),
+			want: []string{"non-struct type Price"}},
+		{name: "computed constant of a named basic type", files: domainFile("type Money int64\nconst C Money = 1 << 3\n"),
+			want: []string{"constant C is computed"}},
+		{name: "iota expression of a named basic type", files: domainFile("type Status int\nconst (\n\tD Status = iota + 1\n\tE\n)\n"),
+			want: []string{"constant D is computed", "constant E has no literal value of its own"}},
+		{name: "constant of another package's type", files: domainFile("import \"time\"\nconst Wait time.Duration = 5\n"),
+			want: []string{"constant Wait has a non-basic type"}},
+		{name: "constant of a named basic type from another domain package", files: map[string]string{
+			"internal/domain/money.go":   "package domain\ntype Money int64\n",
+			"internal/domain/stock/s.go": "package stock\nimport \"gostock/internal/domain\"\nconst A domain.Money = 1\nconst B Money = 2\n",
+		}, want: []string{"constant A has a non-basic type", "constant B has a non-basic type"}},
+		{name: "constant of an alias of a basic type", files: domainFile("type Name = string\nconst N Name = \"n\"\n"),
+			want: []string{"non-struct type Name", "constant N has a non-basic type"}},
 		{name: "alias type", files: domainFile("type A struct{ N int }\ntype B = A\n"),
 			want: []string{"non-struct type B"}},
 		{name: "alias to a struct literal", files: domainFile("type B = struct{ N int }\n"),

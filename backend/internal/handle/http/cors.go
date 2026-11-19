@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"gostock/internal/handle/http/response"
+	"gostock/pkg/response"
 )
 
 // addVaryOrigin ensures the response varies on Origin, so shared caches never
@@ -59,7 +59,7 @@ func CORSMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 					w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
 				} else if isMutationMethod(r.Method) {
 					// Reject cross-site writes from unrecognized or malformed origins.
-					response.Error(w, http.StatusForbidden, "forbidden: cross-origin request not allowed")
+					response.Error(w, http.StatusForbidden, response.CodeForbidden, "forbidden: cross-origin request not allowed")
 					return
 				}
 			}

@@ -136,39 +136,40 @@ func TestDashboardHandler_RejectsInvalidRequests(t *testing.T) {
 		wantBody   string
 	}{
 		{"chart: bad from", http.MethodGet, "/api/v1/dashboard/stock-movements?from=01-11-2026", chart, &fakeDashboardRepository{}, http.StatusBadRequest,
-			`{"success":false,"message":"invalid query parameters","data":{"fields":{"from":"must be a date in YYYY-MM-DD format"}}}`},
+			`{"success":false,"code":"VALIDATION_ERROR","message":"invalid query parameters","data":{"fields":{"from":"must be a date in YYYY-MM-DD format"}}}`},
 		{"chart: bad to", http.MethodGet, "/api/v1/dashboard/stock-movements?to=2026-13-01", chart, &fakeDashboardRepository{}, http.StatusBadRequest,
-			`{"success":false,"message":"invalid query parameters","data":{"fields":{"to":"must be a date in YYYY-MM-DD format"}}}`},
+			`{"success":false,"code":"VALIDATION_ERROR","message":"invalid query parameters","data":{"fields":{"to":"must be a date in YYYY-MM-DD format"}}}`},
 		{"chart: reversed range", http.MethodGet, "/api/v1/dashboard/stock-movements?from=2026-11-02&to=2026-11-01", chart, &fakeDashboardRepository{}, http.StatusBadRequest,
-			`{"success":false,"message":"invalid query parameters","data":{"fields":{"from":"must be on or before to"}}}`},
+			`{"success":false,"code":"VALIDATION_ERROR","message":"invalid query parameters","data":{"fields":{"from":"must be on or before to"}}}`},
 		{"chart: range too long", http.MethodGet, "/api/v1/dashboard/stock-movements?from=2026-01-01&to=2026-06-01&granularity=day", chart, &fakeDashboardRepository{}, http.StatusBadRequest,
-			`{"success":false,"message":"invalid query parameters","data":{"fields":{"to":"range must be at most 92 days by day or 731 days by month"}}}`},
+			`{"success":false,"code":"VALIDATION_ERROR","message":"invalid query parameters","data":{"fields":{"to":"range must be at most 92 days by day or 731 days by month"}}}`},
 		{"chart: bad granularity", http.MethodGet, "/api/v1/dashboard/stock-movements?granularity=hour", chart, &fakeDashboardRepository{}, http.StatusBadRequest,
-			`{"success":false,"message":"invalid query parameters","data":{"fields":{"granularity":"must be auto, day or month"}}}`},
+			`{"success":false,"code":"VALIDATION_ERROR","message":"invalid query parameters","data":{"fields":{"granularity":"must be auto, day or month"}}}`},
 		{"chart: bad tz", http.MethodGet, "/api/v1/dashboard/stock-movements?tz=Not/AZone", chart, &fakeDashboardRepository{}, http.StatusBadRequest,
-			`{"success":false,"message":"invalid query parameters","data":{"fields":{"tz":"must be an IANA time zone name"}}}`},
+			`{"success":false,"code":"VALIDATION_ERROR","message":"invalid query parameters","data":{"fields":{"tz":"must be an IANA time zone name"}}}`},
 		{"chart: abbreviation tz", http.MethodGet, "/api/v1/dashboard/stock-movements?tz=CET", chart, &fakeDashboardRepository{}, http.StatusBadRequest,
-			`{"success":false,"message":"invalid query parameters","data":{"fields":{"tz":"must be an IANA time zone name"}}}`},
+			`{"success":false,"code":"VALIDATION_ERROR","message":"invalid query parameters","data":{"fields":{"tz":"must be an IANA time zone name"}}}`},
 		{"chart: unencoded plus in tz", http.MethodGet, "/api/v1/dashboard/stock-movements?tz=Etc/GMT+7", chart, &fakeDashboardRepository{}, http.StatusBadRequest,
-			`{"success":false,"message":"invalid query parameters","data":{"fields":{"tz":"must be an IANA time zone name"}}}`},
+			`{"success":false,"code":"VALIDATION_ERROR","message":"invalid query parameters","data":{"fields":{"tz":"must be an IANA time zone name"}}}`},
 		{"chart: SQL in tz", http.MethodGet, "/api/v1/dashboard/stock-movements?tz=UTC%27%3B%20DROP%20TABLE%20products%3B--", chart, &fakeDashboardRepository{}, http.StatusBadRequest,
-			`{"success":false,"message":"invalid query parameters","data":{"fields":{"tz":"must be an IANA time zone name"}}}`},
+			`{"success":false,"code":"VALIDATION_ERROR","message":"invalid query parameters","data":{"fields":{"tz":"must be an IANA time zone name"}}}`},
 		{"chart: repository error", http.MethodGet, "/api/v1/dashboard/stock-movements", chart, &fakeDashboardRepository{bucketsErr: errors.New("connection reset")}, http.StatusInternalServerError,
-			`{"success":false,"message":"Internal server error","data":null}`},
+			`{"success":false,"code":"INTERNAL_ERROR","message":"Internal server error","data":null}`},
 		{"chart: wrong method", http.MethodPost, "/api/v1/dashboard/stock-movements", chart, &fakeDashboardRepository{}, http.StatusMethodNotAllowed,
-			`{"success":false,"message":"method not allowed","data":null}`},
+			`{"success":false,"code":"METHOD_NOT_ALLOWED","message":"method not allowed","data":null}`},
 		{"summary: repository error", http.MethodGet, "/api/v1/dashboard/summary", summary, &fakeDashboardRepository{summaryErr: errors.New("connection reset")}, http.StatusInternalServerError,
-			`{"success":false,"message":"Internal server error","data":null}`},
+			`{"success":false,"code":"INTERNAL_ERROR","message":"Internal server error","data":null}`},
 		{"summary: inconsistent counts", http.MethodGet, "/api/v1/dashboard/summary", summary, &fakeDashboardRepository{summary: domain.InventorySummary{TotalProducts: 2, Normal: 1}}, http.StatusInternalServerError,
-			`{"success":false,"message":"Internal server error","data":null}`},
+			`{"success":false,"code":"INTERNAL_ERROR","message":"Internal server error","data":null}`},
 		{"summary: wrong method", http.MethodPut, "/api/v1/dashboard/summary", summary, &fakeDashboardRepository{}, http.StatusMethodNotAllowed,
-			`{"success":false,"message":"method not allowed","data":null}`},
+			`{"success":false,"code":"METHOD_NOT_ALLOWED","message":"method not allowed","data":null}`},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			tt.serve(newTestDashboardHandler(tt.repo))(rec, httptest.NewRequest(tt.method, tt.path, nil))
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			serveRoute(rec, req, http.MethodGet, req.URL.Path, tt.serve(newTestDashboardHandler(tt.repo)))
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())

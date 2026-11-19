@@ -25,6 +25,12 @@ var (
 )
 
 var (
+	ErrWoodTypeNotFound = errors.New("wood type not found")
+	ErrSupplierNotFound = errors.New("supplier not found")
+	ErrInUse            = errors.New("record is in use")
+)
+
+var (
 	ErrRefreshTokenNotFound = errors.New("refresh token not found")
 	ErrRefreshTokenRevoked  = errors.New("refresh token has been revoked")
 	ErrRefreshTokenExpired  = errors.New("refresh token has expired")
@@ -56,6 +62,12 @@ func fromRepository(err error) error {
 		app = ErrEmailExists
 	case errors.Is(err, repository.ErrNotAdmin):
 		app = ErrNotAdmin
+	case errors.Is(err, repository.ErrWoodTypeNotFound):
+		app = ErrWoodTypeNotFound
+	case errors.Is(err, repository.ErrSupplierNotFound):
+		app = ErrSupplierNotFound
+	case errors.Is(err, repository.ErrInUse):
+		app = ErrInUse
 	case errors.Is(err, repository.ErrRefreshTokenNotFound):
 		app = ErrRefreshTokenNotFound
 	case errors.Is(err, repository.ErrRefreshTokenRevoked):

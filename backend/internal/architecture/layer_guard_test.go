@@ -28,7 +28,7 @@ import (
 const (
 	handlePackageTree     = "internal/handle"
 	handlerPackage        = "internal/handle/http"
-	responseHelperPackage = "internal/handle/http/response"
+	responseHelperPackage = "pkg/response"
 	usecasePackage        = "internal/usecase"
 
 	internalPrefix = modulePath + "/internal/"
@@ -37,14 +37,10 @@ const (
 	mapperImport   = modulePath + "/" + mapperPackage
 )
 
-// responseEnvelopeTypes are dto types that wrap a response rather than map a
-// domain value. The response helper (internal/handle/http/response) builds
-// them; they are never part of the handler-mapping rule.
-var responseEnvelopeTypes = map[string]string{
-	"APIResponse":    "the {success, message, data} envelope written by the response helper",
-	"PaginatedData":  "the {items, pagination} wrapper written by response.Paginated",
-	"PaginationMeta": "the pagination metadata written by response.Paginated",
-}
+// The response envelope types (APIResponse, PaginatedData, PaginationMeta) are
+// declared in the response helper, pkg/response, not in internal/dto, so they
+// are never part of the derived response DTO set and need no exception here.
+// response_guard_test.go keeps the helper the only writer of response bodies.
 
 // domainResultAllowlist names the public use case methods, as
 // "ReceiverType.Method", that may return domain types because their result is
@@ -52,7 +48,7 @@ var responseEnvelopeTypes = map[string]string{
 var domainResultAllowlist = map[string]string{
 	"AuthUseCase.Authenticate": "returns the authenticated principal that AuthMiddleware stores in the request context " +
 		"for authorization (RequireRole, currentActorID, Me); it is never serialized as is",
-	"AdminUseCase.CreateAdmin": "has no production caller since the admin CLIs were removed; no HTTP handler returns its result",
+	"AdminUseCase.CreateAdmin": "called only by the server-side admin command (internal/app, `gostock admin create`), which prints the email; no HTTP handler returns its result",
 }
 
 // goFile is one parsed production source file.
@@ -185,8 +181,8 @@ func isMapperImport(p string) bool {
 
 // responseDTOTypes derives the response DTO type names from the source: the
 // dto types the mapper functions return, every dto type named *Response, and
-// the dto struct types those contain (e.g. a chart point), minus the response
-// envelope types. Request and input DTOs are never in the set.
+// the dto struct types those contain (e.g. a chart point). Request and input
+// DTOs are never in the set.
 func responseDTOTypes(fsys fs.FS) (map[string]bool, error) {
 	fset := token.NewFileSet()
 	dtoFiles, err := parseGoFiles(fsys, fset, dtoPackage, false)
@@ -270,9 +266,6 @@ func responseDTOTypes(fsys fs.FS) (map[string]bool, error) {
 				}
 			}
 		}
-	}
-	for name := range responseEnvelopeTypes {
-		delete(set, name)
 	}
 	return set, nil
 }
@@ -437,7 +430,9 @@ func checkUsecaseResults(fsys fs.FS, allowlist map[string]string) ([]string, err
 // Domain declarations: structs and vocabulary constants only.
 // ---------------------------------------------------------------------------
 
-// basicConstTypes are the predeclared types a domain constant may be given.
+// basicConstTypes are the predeclared types the domain may build on: the type
+// a domain constant may be given, and the underlying type of a named domain
+// type (type Money int64, type PieceStatus string).
 var basicConstTypes = map[string]bool{
 	"string": true, "bool": true, "rune": true, "byte": true,
 	"int": true, "int8": true, "int16": true, "int32": true, "int64": true,
@@ -445,12 +440,21 @@ var basicConstTypes = map[string]bool{
 	"float32": true, "float64": true,
 }
 
-// checkDomainDeclarations allows, in the domain tree, imports, struct type
-// declarations and constants whose every name has its own literal value (a
-// vocabulary value such as InventoryStatusNormal = "normal"). It reports
-// functions, methods, package variables, interfaces, other or alias type
-// declarations, and constants that are computed (expressions, references,
-// iota or implicit repetition).
+// checkDomainDeclarations allows, in the domain tree:
+//   - imports;
+//   - struct type declarations;
+//   - named basic types: `type X T` where T is one of basicConstTypes and the
+//     declaration is not an alias (type Money int64, type PieceStatus string);
+//   - constants whose every name has its own literal value (a vocabulary
+//     value such as InventoryStatusNormal = "normal"), untyped or typed with a
+//     basic type or with a named basic type declared in the same package
+//     (const PieceSold PieceStatus = "sold").
+//
+// It reports functions, methods (also on a named basic type), package
+// variables, interfaces, every other type declaration (aliases; slices, maps,
+// pointers, funcs, chans; types based on a named or another package's type),
+// constants of any other type, and constants that are computed (expressions,
+// references, iota or implicit repetition).
 func checkDomainDeclarations(fsys fs.FS) ([]string, error) {
 	fset := token.NewFileSet()
 	files, err := parseGoFiles(fsys, fset, domainPackage, true)
@@ -459,10 +463,36 @@ func checkDomainDeclarations(fsys fs.FS) ([]string, error) {
 	}
 	var violations []string
 	report := func(pos token.Pos, format string, args ...any) {
-		violations = append(violations, fmt.Sprintf("%s: %s; domain holds only structs and vocabulary constants",
+		violations = append(violations, fmt.Sprintf("%s: %s; domain holds only structs, named basic types and vocabulary constants",
 			fset.Position(pos), fmt.Sprintf(format, args...)))
 	}
+
+	// isNamedBasic reports whether ts is `type X T` with T a basic type.
+	isNamedBasic := func(ts *ast.TypeSpec) bool {
+		id, ok := ts.Type.(*ast.Ident)
+		return ok && !ts.Assign.IsValid() && ts.TypeParams == nil && basicConstTypes[id.Name]
+	}
+	// First pass: the named basic types of each package (directory), so a
+	// constant may use one declared in another file of the same package.
+	namedBasic := map[string]map[string]bool{}
 	for _, f := range files {
+		dir := path.Dir(f.path)
+		for _, decl := range f.file.Decls {
+			if d, ok := decl.(*ast.GenDecl); ok && d.Tok == token.TYPE {
+				for _, spec := range d.Specs {
+					if ts := spec.(*ast.TypeSpec); isNamedBasic(ts) {
+						if namedBasic[dir] == nil {
+							namedBasic[dir] = map[string]bool{}
+						}
+						namedBasic[dir][ts.Name.Name] = true
+					}
+				}
+			}
+		}
+	}
+
+	for _, f := range files {
+		dir := path.Dir(f.path)
 		for _, decl := range f.file.Decls {
 			switch d := decl.(type) {
 			case *ast.FuncDecl:
@@ -483,6 +513,9 @@ func checkDomainDeclarations(fsys fs.FS) ([]string, error) {
 				case token.TYPE:
 					for _, spec := range d.Specs {
 						ts := spec.(*ast.TypeSpec)
+						if isNamedBasic(ts) {
+							continue // vocabulary type such as Money or PieceStatus
+						}
 						switch ts.Type.(type) {
 						case *ast.StructType:
 							if ts.Assign.IsValid() {
@@ -498,7 +531,9 @@ func checkDomainDeclarations(fsys fs.FS) ([]string, error) {
 					for _, spec := range d.Specs {
 						vs := spec.(*ast.ValueSpec)
 						if vs.Type != nil {
-							if id, ok := vs.Type.(*ast.Ident); !ok || !basicConstTypes[id.Name] {
+							// A basic type, or a named basic type of this package;
+							// a selector (time.Duration) or any other type is not.
+							if id, ok := vs.Type.(*ast.Ident); !ok || !(basicConstTypes[id.Name] || namedBasic[dir][id.Name]) {
 								report(vs.Pos(), "constant %s has a non-basic type", vs.Names[0].Name)
 								continue
 							}
@@ -584,7 +619,6 @@ func TestDomainAndDTOHaveNoInternalImports(t *testing.T) {
 func TestHandlerDoesNotImportMapper(t *testing.T) {
 	fsys := moduleFS(t)
 	requireFiles(t, fsys, handlerPackage)
-	requireFiles(t, fsys, responseHelperPackage)
 	v, err := checkImports(fsys, handlePackageTree, isMapperImport, "only use cases call the mapper")
 	reportViolations(t, v, err, "Return the response DTO from the use case instead of mapping in the HTTP layer.")
 }

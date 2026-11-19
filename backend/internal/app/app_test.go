@@ -120,7 +120,7 @@ func (f *fakeTokenManager) ValidateAccessToken(tokenStr string) (*dto.TokenClaim
 	return &dto.TokenClaims{UserID: 1, Email: "test@example.com", Role: "user"}, nil
 }
 
-func setupTestRouter() *http.ServeMux {
+func setupTestRouter() http.Handler {
 	productRepo := &fakeProductRepo{}
 	productUC := usecase.NewProductUseCase(productRepo)
 	productHandler := productHTTP.NewProductHandler(productUC)
@@ -142,7 +142,9 @@ func setupTestRouter() *http.ServeMux {
 
 	dashboardHandler := productHTTP.NewDashboardHandler(usecase.NewDashboardUseCase(&fakeDashboardRepo{}))
 
-	return NewRouter(nil, productHandler, authHandler, authenticator, userHandler, stockMovementHandler, dashboardHandler)
+	return NewRouter(nil, productHandler, authHandler, authenticator, userHandler, stockMovementHandler, dashboardHandler,
+		productHTTP.NewWoodTypeHandler(usecase.NewWoodTypeUseCase(&fakeWoodTypeRepo{})),
+		productHTTP.NewSupplierHandler(usecase.NewSupplierUseCase(&fakeSupplierRepo{})))
 }
 
 func TestProductRoutes_AuthorizationMatrix(t *testing.T) {
@@ -526,7 +528,7 @@ func TestRouter_RouteRegistration(t *testing.T) {
 		authenticator := &fakeAuth{}
 		userUC := usecase.NewUserUseCase(userRepo)
 		userHandler := productHTTP.NewUserHandler(userUC)
-		router := NewRouter(db, productHandler, authHandler, authenticator, userHandler, nil, nil)
+		router := NewRouter(db, productHandler, authHandler, authenticator, userHandler, nil, nil, nil, nil)
 
 		req := httptest.NewRequest(http.MethodGet, "/ready", nil)
 		rec := httptest.NewRecorder()

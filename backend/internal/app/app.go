@@ -89,6 +89,8 @@ func newApp(cfg dto.AppConfig, opener dbOpener, postDBHook func(db *sql.DB) erro
 	refreshRepo := postgres.NewRefreshTokenRepository(db)
 	stockMovementRepo := postgres.NewStockMovementRepository(db)
 	dashboardRepo := postgres.NewDashboardRepository(db)
+	woodTypeRepo := postgres.NewWoodTypeRepository(db)
+	supplierRepo := postgres.NewSupplierRepository(db)
 
 	// 4. Construct use cases
 	productUseCase := usecase.NewProductUseCase(productRepo)
@@ -99,10 +101,14 @@ func newApp(cfg dto.AppConfig, opener dbOpener, postDBHook func(db *sql.DB) erro
 		cfg.AccessTokenTTL,
 		cfg.RefreshTokenTTL,
 		cfg.RefreshTokenGracePeriod,
+		usecase.WithRegistration(cfg.AllowRegistration),
+		usecase.WithPasswordChange(userRepo),
 	)
 	userUseCase := usecase.NewUserUseCase(userRepo)
 	stockMovementUseCase := usecase.NewStockMovementUseCase(productRepo, stockMovementRepo)
 	dashboardUseCase := usecase.NewDashboardUseCase(dashboardRepo)
+	woodTypeUseCase := usecase.NewWoodTypeUseCase(woodTypeRepo)
+	supplierUseCase := usecase.NewSupplierUseCase(supplierRepo)
 
 	// 5. Construct HTTP handlers
 	cookieManager := productHTTP.NewCookieManager(cfg.CookieSecure, cfg.CookieSameSite, cfg.AccessTokenTTL, cfg.RefreshTokenTTL)
@@ -111,9 +117,12 @@ func newApp(cfg dto.AppConfig, opener dbOpener, postDBHook func(db *sql.DB) erro
 	userHandler := productHTTP.NewUserHandler(userUseCase)
 	stockMovementHandler := productHTTP.NewStockMovementHandler(stockMovementUseCase)
 	dashboardHandler := productHTTP.NewDashboardHandler(dashboardUseCase)
+	woodTypeHandler := productHTTP.NewWoodTypeHandler(woodTypeUseCase)
+	supplierHandler := productHTTP.NewSupplierHandler(supplierUseCase)
 
 	// 6. Construct router and middleware
-	router := NewRouter(db, productHandler, authHandler, authUseCase, userHandler, stockMovementHandler, dashboardHandler)
+	router := NewRouter(db, productHandler, authHandler, authUseCase, userHandler, stockMovementHandler, dashboardHandler,
+		woodTypeHandler, supplierHandler)
 	handler := productHTTP.CORSMiddleware(cfg.AllowedOrigins)(router)
 
 	// 7. Configure HTTP server with production-grade timeouts

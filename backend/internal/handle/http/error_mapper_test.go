@@ -13,8 +13,8 @@ import (
 	"testing"
 
 	"gostock/internal/dto"
-	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
+	"gostock/pkg/response"
 )
 
 func TestMapError_KnownDomainAndUseCaseErrors(t *testing.T) {
@@ -142,7 +142,7 @@ func TestWriteError_ResponseEnvelope(t *testing.T) {
 			t.Errorf("Content-Type = %q, want application/json", rec.Header().Get("Content-Type"))
 		}
 
-		var resp dto.APIResponse
+		var resp response.APIResponse
 		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("failed to decode JSON: %v", err)
 		}
@@ -177,7 +177,7 @@ func TestWriteError_ResponseEnvelope(t *testing.T) {
 			t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 		}
 
-		var resp dto.APIResponse
+		var resp response.APIResponse
 		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("failed to decode JSON: %v", err)
 		}
@@ -414,7 +414,7 @@ func TestWriteError_StructuredLogging(t *testing.T) {
 			t.Errorf("sensitive internal error leaked in response: %s", respBody)
 		}
 
-		var resp dto.APIResponse
+		var resp response.APIResponse
 		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("failed to decode response JSON: %v", err)
 		}

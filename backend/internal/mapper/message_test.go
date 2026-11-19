@@ -30,8 +30,4 @@ func TestToLogoutResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertJSON(t, mapper.ToLogoutResponse(), string(legacy))
-
-	// Inside the envelope it gives the body pinned by the Step 1 contract test.
-	assertJSON(t, dto.APIResponse{Success: true, Message: mapper.LogoutMessage, Data: mapper.ToLogoutResponse()},
-		`{"success":true,"message":"logged out","data":{"message":"logged out"}}`)
 }

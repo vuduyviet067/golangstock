@@ -208,7 +208,7 @@ func newTestAuthUseCase(
 	if tm == nil {
 		tm = &fakeTokenManager{}
 	}
-	return NewAuthUseCase(users, tokens, tm, 15*time.Minute, 7*24*time.Hour, 15*time.Second)
+	return NewAuthUseCase(users, tokens, tm, 15*time.Minute, 7*24*time.Hour, 15*time.Second, WithRegistration(true))
 }
 
 func TestRegisterSuccess(t *testing.T) {

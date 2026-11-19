@@ -99,15 +99,15 @@ func TestStockMovementRoutes_NotRegisteredWithoutHandler(t *testing.T) {
 	productHandler := productHTTP.NewProductHandler(usecase.NewProductUseCase(&fakeProductRepo{}))
 	authUC := usecase.NewAuthUseCase(&fakeUserRepo{}, &fakeRefreshTokenRepo{}, &fakeTokenManager{}, 15*time.Minute, 7*24*time.Hour, 15*time.Second)
 	authHandler := productHTTP.NewAuthHandler(authUC, nil)
-	router := NewRouter(nil, productHandler, authHandler, &fakeAuth{}, nil, nil, nil)
+	router := NewRouter(nil, productHandler, authHandler, &fakeAuth{}, nil, nil, nil, nil, nil)
 
 	tests := []struct {
 		path       string
 		wantStatus int
 	}{
 		{"/api/v1/stock-movements", http.StatusNotFound},
-		// Falls through to GET /api/v1/products/{id}, which rejects the ID.
-		{"/api/v1/products/1/movements", http.StatusBadRequest},
+		// Not registered without a handler: 404 NOT_FOUND, no fall-through to GET /api/v1/products/{id}.
+		{"/api/v1/products/1/movements", http.StatusNotFound},
 	}
 
 	for _, tt := range tests {

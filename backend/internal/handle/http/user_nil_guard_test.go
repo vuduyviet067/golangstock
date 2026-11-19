@@ -12,7 +12,7 @@ import (
 // A user repository that returns (nil, nil) yields the existing 404 response
 // through the current error mapping, with no write (Step 4.2).
 func TestUserHandler_RepositoryReturnsNilNil(t *testing.T) {
-	const notFound = `{"success":false,"message":"user not found","data":null}`
+	const notFound = `{"success":false,"code":"USER_NOT_FOUND","message":"user not found","data":null}`
 
 	newRepo := func(t *testing.T) *mockUserRepoForHandler {
 		return &mockUserRepoForHandler{
@@ -26,7 +26,7 @@ func TestUserHandler_RepositoryReturnsNilNil(t *testing.T) {
 
 	t.Run("get", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		setupUserHandler(newRepo(t)).GetByID(rec, httptest.NewRequest(http.MethodGet, "/api/v1/users/7", nil))
+		setupUserHandler(newRepo(t)).GetByID(rec, newRequest(http.MethodGet, "/api/v1/users/7", nil))
 
 		contractAssertResponse(t, rec, http.StatusNotFound, notFound)
 	})
