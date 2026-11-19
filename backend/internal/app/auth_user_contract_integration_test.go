@@ -208,6 +208,8 @@ func TestAuthUserContract_PostgreSQL(t *testing.T) {
 		productHTTP.NewUserHandler(usecase.NewUserUseCase(userRepo)),
 		nil,
 		nil,
+		nil,
+		nil,
 	)
 
 	tag := fmt.Sprintf("mapper-contract-%d", time.Now().UnixNano())

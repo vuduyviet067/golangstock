@@ -99,7 +99,7 @@ func TestStockMovementRoutes_NotRegisteredWithoutHandler(t *testing.T) {
 	productHandler := productHTTP.NewProductHandler(usecase.NewProductUseCase(&fakeProductRepo{}))
 	authUC := usecase.NewAuthUseCase(&fakeUserRepo{}, &fakeRefreshTokenRepo{}, &fakeTokenManager{}, 15*time.Minute, 7*24*time.Hour, 15*time.Second)
 	authHandler := productHTTP.NewAuthHandler(authUC, nil)
-	router := NewRouter(nil, productHandler, authHandler, &fakeAuth{}, nil, nil, nil)
+	router := NewRouter(nil, productHandler, authHandler, &fakeAuth{}, nil, nil, nil, nil, nil)
 
 	tests := []struct {
 		path       string

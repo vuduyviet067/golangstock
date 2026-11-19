@@ -26,6 +26,8 @@ func NewRouter(
 	userHandler *productHTTP.UserHandler,
 	stockMovementHandler *productHTTP.StockMovementHandler,
 	dashboardHandler *productHTTP.DashboardHandler,
+	woodTypeHandler *productHTTP.WoodTypeHandler,
+	supplierHandler *productHTTP.SupplierHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 	routes := productHTTP.NewRouteTable(r)
@@ -94,6 +96,25 @@ func NewRouter(
 				r.Use(authenticated, admin)
 				r.Get("/summary", dashboardHandler.Summary)
 				r.Get("/stock-movements", dashboardHandler.StockMovementChart)
+			})
+		}
+		// Catalogs of the timber workshop (XG-05).
+		if woodTypeHandler != nil {
+			r.Route("/wood-types", func(r chi.Router) {
+				r.Use(authenticated, admin)
+				r.Get("/", woodTypeHandler.List)
+				r.Post("/", woodTypeHandler.Create)
+				r.Patch("/{id}", woodTypeHandler.Update)
+				r.Delete("/{id}", woodTypeHandler.Delete)
+			})
+		}
+		if supplierHandler != nil {
+			r.Route("/suppliers", func(r chi.Router) {
+				r.Use(authenticated, admin)
+				r.Get("/", supplierHandler.List)
+				r.Post("/", supplierHandler.Create)
+				r.Patch("/{id}", supplierHandler.Update)
+				r.Delete("/{id}", supplierHandler.Delete)
 			})
 		}
 	})

@@ -120,6 +120,7 @@ gostock/
 │   │   └── usecase/
 │   ├── migrations/
 │   ├── pkg/
+│   │   ├── phone/
 │   │   └── response/
 │   ├── main.go
 │   ├── go.mod
@@ -237,6 +238,36 @@ All user-management endpoints require the Admin role.
 
 Newly registered accounts receive the `user` role. Administrator accounts are created through the operator CLI.
 
+### Wood types and suppliers
+
+Catalogs of the timber workshop (migration `000009`). Every endpoint requires the Admin role: without a token the answer is 401 `UNAUTHENTICATED`, with a user token 403 `FORBIDDEN`.
+
+| Method | Endpoint | Description | Success |
+|---|---|---|---|
+| GET | `/api/v1/wood-types` | List every wood type, sorted by name (no pagination) | 200 |
+| POST | `/api/v1/wood-types` | Create a wood type: `{"name": "Gỗ lim"}` | 201 |
+| PATCH | `/api/v1/wood-types/{id}` | Rename a wood type | 200 |
+| DELETE | `/api/v1/wood-types/{id}` | Delete a wood type | 204 |
+| GET | `/api/v1/suppliers` | List every supplier, sorted by name (no pagination) | 200 |
+| POST | `/api/v1/suppliers` | Create a supplier: `{"name": "An Phát", "phone": "+84 368 122 137"}` | 201 |
+| PATCH | `/api/v1/suppliers/{id}` | Edit a supplier's name and/or phone | 200 |
+| DELETE | `/api/v1/suppliers/{id}` | Delete a supplier | 204 |
+
+Rules:
+
+- Names are trimmed and must have 1 to 100 characters (`INVALID_WOOD_TYPE` / `INVALID_SUPPLIER`). Names are not unique: two wood types may have the same name.
+- A supplier's phone is optional and not unique. Omitted, `null` or `""` means no phone. When given it must be a Vietnamese number and is stored normalized: spaces, dots, dashes and parentheses are removed and `+84`/`84` becomes `0`, so `+84 368 122 137` is stored as `0368122137`. Otherwise the answer is 400 `INVALID_PHONE`.
+- PATCH changes only the fields sent; an omitted or `null` field keeps its value. For a supplier, `"phone": ""` removes the stored number. A body with no field is 400 `EMPTY_UPDATE`.
+- DELETE removes the row for good. A row that another record still references is not deleted: 409 `IN_USE`.
+- An `{id}` that is not a positive integer is 400 `INVALID_WOOD_TYPE_ID` / `INVALID_SUPPLIER_ID`; an unknown one is 404 `WOOD_TYPE_NOT_FOUND` / `SUPPLIER_NOT_FOUND`.
+
+Example responses:
+
+```json
+{"success":true,"message":"Supplier created successfully","data":{"id":1,"name":"An Phát","phone":"0368122137","created_at":"2026-11-20T08:00:00Z","updated_at":"2026-11-20T08:00:00Z"}}
+{"success":false,"code":"INVALID_PHONE","message":"invalid Vietnamese phone number","data":null}
+```
+
 ## Prerequisites
 
 - Go installed.
@@ -317,10 +348,14 @@ After all migrations have been applied, the database contains:
 | `users` | `000002_create_users` |
 | `refresh_tokens` | `000004_create_refresh_tokens` |
 | `products` | `000006_create_or_validate_products` |
+| `stock_movements` | `000008_create_stock_movements` |
+| `wood_types`, `suppliers` | `000009_create_wood_types_and_suppliers` |
 
 The `sessions` table is legacy migration history: migration `000003` creates it and migration `000005` drops it. It does not exist after all migrations have run.
 
 Migration `000001_baseline_products` is a baseline marker only; it does not create or modify the products table.
+
+Migration `000009_create_wood_types_and_suppliers` creates the two catalogs with CHECK constraints that repeat the API rules: a name of 1 to 100 characters that is not blank, and a phone that is `NULL` or a normalized Vietnamese number (`^0[1-9][0-9]{8,9}$`). Its down migration drops both tables with their rows.
 
 #### Existing products table validation
 
@@ -555,16 +590,24 @@ Specific codes:
 | `INVALID_PASSWORD` | 400 | `invalid password` |
 | `INVALID_CURRENT_PASSWORD` | 400 | `current password is incorrect` (change-password) |
 | `PASSWORD_UNCHANGED` | 400 | `new password must differ from the current password` (change-password) |
+| `INVALID_WOOD_TYPE_ID` | 400 | `invalid wood type ID` |
+| `INVALID_SUPPLIER_ID` | 400 | `invalid supplier ID` |
+| `INVALID_WOOD_TYPE` | 400 | `wood type name must have 1 to 100 characters` |
+| `INVALID_SUPPLIER` | 400 | `supplier name must have 1 to 100 characters` |
+| `INVALID_PHONE` | 400 | `invalid Vietnamese phone number` |
 | `INVALID_CREDENTIALS` | 401 | `invalid email or password` |
 | `INVALID_SESSION` | 401 | `invalid or expired session` |
 | `INVALID_REFRESH_TOKEN` | 401 | `invalid or expired refresh token` (one code for unknown, revoked, expired and reused tokens) |
 | `REGISTRATION_DISABLED` | 403 | `registration is disabled` (`ALLOW_REGISTRATION` is not `true`) |
 | `PRODUCT_NOT_FOUND` | 404 | `Product not found` |
 | `USER_NOT_FOUND` | 404 | `user not found` |
+| `WOOD_TYPE_NOT_FOUND` | 404 | `wood type not found` |
+| `SUPPLIER_NOT_FOUND` | 404 | `supplier not found` |
 | `SKU_EXISTS` | 409 | `SKU already exists` |
 | `EMAIL_EXISTS` | 409 | `email already exists` |
 | `INSUFFICIENT_STOCK` | 409 | `Insufficient stock` |
 | `CONCURRENT_REFRESH` | 409 | `concurrent refresh in progress` |
+| `IN_USE` | 409 | `the record is in use and cannot be deleted` (wood types, suppliers) |
 
 Codes are assigned in the HTTP layer (`MapError` in `backend/internal/handle/http/error_mapper.go` and the handlers), never in use cases. A message always comes with the same code.
 

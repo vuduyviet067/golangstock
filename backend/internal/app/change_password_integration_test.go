@@ -56,7 +56,7 @@ func TestChangePassword_PostgreSQL(t *testing.T) {
 		productHTTP.NewAuthHandler(authUC, productHTTP.NewCookieManager(false, http.SameSiteLaxMode, 15*time.Minute, 7*24*time.Hour)),
 		authUC,
 		productHTTP.NewUserHandler(usecase.NewUserUseCase(userRepo)),
-		nil, nil)
+		nil, nil, nil, nil)
 
 	send := func(path, body string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
 		t.Helper()

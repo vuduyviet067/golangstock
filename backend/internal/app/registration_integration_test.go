@@ -45,7 +45,7 @@ func TestRegistrationDisabled_PostgreSQL(t *testing.T) {
 		productHTTP.NewAuthHandler(authUC, productHTTP.NewCookieManager(false, http.SameSiteLaxMode, 15*time.Minute, 7*24*time.Hour)),
 		authUC,
 		productHTTP.NewUserHandler(usecase.NewUserUseCase(userRepo)),
-		nil, nil)
+		nil, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register",
 		strings.NewReader(`{"email":"`+email+`","password":"valid-password-1"}`))

@@ -57,6 +57,10 @@ var specRoutes = []string{
 	"/api/v1/stock-movements",
 	"/api/v1/dashboard/summary",
 	"/api/v1/dashboard/stock-movements",
+	"/api/v1/wood-types",
+	"/api/v1/wood-types/1",
+	"/api/v1/suppliers",
+	"/api/v1/suppliers/1",
 }
 
 // specOtherPaths are paths that are not routes of the API, or malformed
@@ -81,6 +85,9 @@ var specOtherPaths = []string{
 	"/api/v1/dashboard",
 	"/api/v1/dashboard/unknown",
 	"/health/x",
+	"/api/v1/wood-types/abc",
+	"/api/v1/suppliers/0",
+	"/api/v1/suppliers/1/x",
 }
 
 var specMethods = []string{
@@ -109,6 +116,10 @@ func specBody(method, path string) string {
 		return `{"sku":"SKU-001","name":"Renamed","price":10}`
 	case strings.HasPrefix(path, "/api/v1/users"):
 		return `{"role":"admin"}`
+	case strings.HasPrefix(path, "/api/v1/wood-types"):
+		return `{"name":"Gỗ lim"}`
+	case strings.HasPrefix(path, "/api/v1/suppliers"):
+		return `{"name":"Xưởng An Phát","phone":"0368 122 137"}`
 	}
 	return `{}`
 }
@@ -209,7 +220,9 @@ func specHandler(t *testing.T, withDB bool) http.Handler {
 		&fakeAuth{},
 		productHTTP.NewUserHandler(usecase.NewUserUseCase(userRepo)),
 		productHTTP.NewStockMovementHandler(usecase.NewStockMovementUseCase(productRepo, &fakeStockMovementRepo{})),
-		productHTTP.NewDashboardHandler(usecase.NewDashboardUseCase(&fakeDashboardRepo{})))
+		productHTTP.NewDashboardHandler(usecase.NewDashboardUseCase(&fakeDashboardRepo{})),
+		productHTTP.NewWoodTypeHandler(usecase.NewWoodTypeUseCase(&fakeWoodTypeRepo{})),
+		productHTTP.NewSupplierHandler(usecase.NewSupplierUseCase(&fakeSupplierRepo{})))
 	return cors(router)
 }
 

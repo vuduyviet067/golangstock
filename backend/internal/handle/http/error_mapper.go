@@ -70,6 +70,16 @@ func MapError(err error) *dto.HTTPError {
 		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidCurrentPassword, Message: "current password is incorrect", Cause: err}
 	case errors.Is(err, usecase.ErrPasswordUnchanged):
 		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codePasswordUnchanged, Message: "new password must differ from the current password", Cause: err}
+	case errors.Is(err, usecase.ErrInvalidWoodTypeID):
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidWoodTypeID, Message: "invalid wood type ID", Cause: err}
+	case errors.Is(err, usecase.ErrInvalidSupplierID):
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidSupplierID, Message: "invalid supplier ID", Cause: err}
+	case errors.Is(err, usecase.ErrInvalidWoodType):
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidWoodType, Message: "wood type name must have 1 to 100 characters", Cause: err}
+	case errors.Is(err, usecase.ErrInvalidSupplier):
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidSupplier, Message: "supplier name must have 1 to 100 characters", Cause: err}
+	case errors.Is(err, usecase.ErrInvalidPhone):
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidPhone, Message: "invalid Vietnamese phone number", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidChartFrom):
 		return NewValidationError(invalidQueryMessage, map[string]string{"from": "must be a date in YYYY-MM-DD format"}, err)
 	case errors.Is(err, usecase.ErrInvalidChartTo):
@@ -111,6 +121,10 @@ func MapError(err error) *dto.HTTPError {
 		// AuthUseCase into ErrInvalidCredentials / ErrInvalidSession (401). If ErrUserNotFound
 		// reaches the HTTP layer in user-management/resource endpoints, it indicates 404 Not Found.
 		return &dto.HTTPError{StatusCode: http.StatusNotFound, Code: codeUserNotFound, Message: "user not found", Cause: err}
+	case errors.Is(err, usecase.ErrWoodTypeNotFound):
+		return &dto.HTTPError{StatusCode: http.StatusNotFound, Code: codeWoodTypeNotFound, Message: "wood type not found", Cause: err}
+	case errors.Is(err, usecase.ErrSupplierNotFound):
+		return &dto.HTTPError{StatusCode: http.StatusNotFound, Code: codeSupplierNotFound, Message: "supplier not found", Cause: err}
 
 	// 409 Conflict — Business conflict & concurrent operations
 	case errors.Is(err, usecase.ErrConcurrentRefresh):
@@ -121,6 +135,8 @@ func MapError(err error) *dto.HTTPError {
 		return &dto.HTTPError{StatusCode: http.StatusConflict, Code: codeEmailExists, Message: "email already exists", Cause: err}
 	case errors.Is(err, usecase.ErrInsufficientStock):
 		return &dto.HTTPError{StatusCode: http.StatusConflict, Code: codeInsufficientStock, Message: "Insufficient stock", Cause: err}
+	case errors.Is(err, usecase.ErrInUse):
+		return &dto.HTTPError{StatusCode: http.StatusConflict, Code: codeInUse, Message: "the record is in use and cannot be deleted", Cause: err}
 
 	// 500 Internal Server Error — Server misconfiguration (e.g. non-positive TTL) or infrastructure failure
 	case errors.Is(err, usecase.ErrInvalidTokenTTL):

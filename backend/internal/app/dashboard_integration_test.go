@@ -113,6 +113,8 @@ func TestDashboard_EndToEnd(t *testing.T) {
 		productHTTP.NewUserHandler(usecase.NewUserUseCase(userRepo)),
 		productHTTP.NewStockMovementHandler(usecase.NewStockMovementUseCase(productRepo, postgres.NewStockMovementRepository(db))),
 		productHTTP.NewDashboardHandler(usecase.NewDashboardUseCase(postgres.NewDashboardRepository(db))),
+		nil,
+		nil,
 	)
 
 	call := func(method, path, token, body string, want int) *httptest.ResponseRecorder {

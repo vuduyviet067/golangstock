@@ -53,6 +53,14 @@ var mappedCodes = []struct {
 	{usecase.ErrRegistrationDisabled, "REGISTRATION_DISABLED"},
 	{usecase.ErrInvalidCurrentPassword, "INVALID_CURRENT_PASSWORD"},
 	{usecase.ErrPasswordUnchanged, "PASSWORD_UNCHANGED"},
+	{usecase.ErrInvalidWoodTypeID, "INVALID_WOOD_TYPE_ID"},
+	{usecase.ErrInvalidSupplierID, "INVALID_SUPPLIER_ID"},
+	{usecase.ErrInvalidWoodType, "INVALID_WOOD_TYPE"},
+	{usecase.ErrInvalidSupplier, "INVALID_SUPPLIER"},
+	{usecase.ErrInvalidPhone, "INVALID_PHONE"},
+	{usecase.ErrWoodTypeNotFound, "WOOD_TYPE_NOT_FOUND"},
+	{usecase.ErrSupplierNotFound, "SUPPLIER_NOT_FOUND"},
+	{usecase.ErrInUse, "IN_USE"},
 	{usecase.ErrInvalidTokenTTL, "INTERNAL_ERROR"},
 	{errors.New("pq: connection refused"), "INTERNAL_ERROR"},
 }
@@ -132,6 +140,8 @@ func TestHandlerCodesMatchMapError(t *testing.T) {
 		{codeInvalidPage, usecase.ErrInvalidPage},
 		{codeInvalidLimit, usecase.ErrInvalidLimit},
 		{response.CodeUnauthenticated, usecase.ErrInvalidActor},
+		{codeInvalidWoodTypeID, usecase.ErrInvalidWoodTypeID},
+		{codeInvalidSupplierID, usecase.ErrInvalidSupplierID},
 	}
 	for _, p := range pairs {
 		if got := MapError(p.err).Code; got != p.handlerCode {

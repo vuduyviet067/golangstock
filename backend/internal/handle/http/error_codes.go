@@ -21,6 +21,11 @@ const (
 	// session on 401, which a wrong current password must not trigger.
 	codeInvalidCurrentPassword = "INVALID_CURRENT_PASSWORD"
 	codePasswordUnchanged      = "PASSWORD_UNCHANGED"
+	codeInvalidWoodTypeID      = "INVALID_WOOD_TYPE_ID"
+	codeInvalidSupplierID      = "INVALID_SUPPLIER_ID"
+	codeInvalidWoodType        = "INVALID_WOOD_TYPE"
+	codeInvalidSupplier        = "INVALID_SUPPLIER"
+	codeInvalidPhone           = "INVALID_PHONE"
 
 	// 401 Unauthorized.
 	codeInvalidCredentials = "INVALID_CREDENTIALS"
@@ -33,12 +38,16 @@ const (
 	codeRegistrationDisabled = "REGISTRATION_DISABLED"
 
 	// 404 Not Found.
-	codeProductNotFound = "PRODUCT_NOT_FOUND"
-	codeUserNotFound    = "USER_NOT_FOUND"
+	codeProductNotFound  = "PRODUCT_NOT_FOUND"
+	codeUserNotFound     = "USER_NOT_FOUND"
+	codeWoodTypeNotFound = "WOOD_TYPE_NOT_FOUND"
+	codeSupplierNotFound = "SUPPLIER_NOT_FOUND"
 
 	// 409 Conflict.
 	codeConcurrentRefresh = "CONCURRENT_REFRESH"
 	codeSKUExists         = "SKU_EXISTS"
 	codeEmailExists       = "EMAIL_EXISTS"
 	codeInsufficientStock = "INSUFFICIENT_STOCK"
+	// A delete refused because another row still references the record.
+	codeInUse = "IN_USE"
 )

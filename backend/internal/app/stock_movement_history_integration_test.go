@@ -98,6 +98,8 @@ func TestStockMovementHistory_EndToEnd(t *testing.T) {
 			usecase.NewStockMovementUseCase(productRepo, postgres.NewStockMovementRepository(db)),
 		),
 		nil,
+		nil,
+		nil,
 	)
 
 	call := func(method, path, token, body string) *httptest.ResponseRecorder {
