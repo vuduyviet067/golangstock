@@ -32,7 +32,7 @@ func TestAuthFlow_FullLifecycle_Mock(t *testing.T) {
 		t.Fatalf("init jwt: %v", err)
 	}
 
-	uc := usecase.NewAuthUseCase(uRepo, rRepo, tm, 15*time.Minute, 7*24*time.Hour, 15*time.Second)
+	uc := usecase.NewAuthUseCase(uRepo, rRepo, tm, 15*time.Minute, 7*24*time.Hour, 15*time.Second, usecase.WithRegistration(true))
 	cm := NewCookieManager(false, http.SameSiteLaxMode, 15*time.Minute, 7*24*time.Hour)
 	authHandler := NewAuthHandler(uc, cm)
 	authMiddleware := AuthMiddleware(uc)
@@ -124,7 +124,7 @@ func TestAuthFlow_FullLifecycle_PostgreSQL(t *testing.T) {
 		t.Fatalf("init jwt: %v", err)
 	}
 
-	uc := usecase.NewAuthUseCase(userRepo, refreshRepo, tm, 15*time.Minute, 7*24*time.Hour, 15*time.Second)
+	uc := usecase.NewAuthUseCase(userRepo, refreshRepo, tm, 15*time.Minute, 7*24*time.Hour, 15*time.Second, usecase.WithRegistration(true))
 	cm := NewCookieManager(false, http.SameSiteLaxMode, 15*time.Minute, 7*24*time.Hour)
 	authHandler := NewAuthHandler(uc, cm)
 	authMiddleware := AuthMiddleware(uc)

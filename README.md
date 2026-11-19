@@ -146,13 +146,35 @@ All application endpoints use the `/api/v1` prefix, except for health and readin
 
 | Method | Endpoint | Description | Authentication |
 |---|---|---|---|
-| POST | `/api/v1/auth/register` | Register a new user | Public |
+| POST | `/api/v1/auth/register` | Register a new user; only when `ALLOW_REGISTRATION=true`, otherwise `403 REGISTRATION_DISABLED` | Public |
 | POST | `/api/v1/auth/login` | Log in | Public |
 | POST | `/api/v1/auth/refresh` | Refresh authentication tokens | Refresh cookie |
 | POST | `/api/v1/auth/logout` | Log out and revoke refresh token | Refresh cookie |
 | GET | `/api/v1/auth/me` | Get the authenticated user | Authenticated |
+| POST | `/api/v1/auth/change-password` | Change the authenticated user's own password | Authenticated (any role) |
 
 Access and refresh tokens are delivered through HttpOnly cookies. The access token is a JWT; refresh tokens are persisted to support rotation and revocation.
+
+#### Change password
+
+`POST /api/v1/auth/change-password` with `Content-Type: application/json`:
+
+```json
+{ "current_password": "the current password", "new_password": "the new password" }
+```
+
+The new password follows the registration rules (8 to 72 bytes) and must differ from the current one. On success the response is `200` with `{"success":true,"message":"password changed","data":null}`; the new password hash is stored and **every refresh token of the user is revoked** in one transaction, and both auth cookies are cleared as on logout, so every session of the user (on every device) must log in again with the new password.
+
+| Status | Code | When |
+|---|---|---|
+| 400 | `INVALID_CURRENT_PASSWORD` | `current_password` is wrong. It is not a 401, so the frontend does not try to refresh the session |
+| 400 | `PASSWORD_UNCHANGED` | `new_password` equals the current password |
+| 400 | `INVALID_PASSWORD` | `new_password` is shorter than 8 or longer than 72 bytes |
+| 400 | `VALIDATION_ERROR` | Malformed JSON, an unknown field or more than one JSON object |
+| 401 | `UNAUTHENTICATED` | No valid access token |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | `Content-Type` is not `application/json` |
+
+A refused change keeps the session and its cookies. Known limitation: an access token issued before the change stays valid until it expires, at most 15 minutes (`ACCESS_TOKEN_TTL_MINUTES`), because access tokens are stateless JWTs that are not checked against the database; only the refresh tokens are revoked at once.
 
 ### Products and inventory
 
@@ -407,7 +429,8 @@ The application initializes its dependencies, connects to PostgreSQL, starts the
 | `ACCESS_TOKEN_TTL_MINUTES` | No | Access token lifetime; defaults to 15 minutes |
 | `REFRESH_TOKEN_TTL_DAYS` | No | Refresh token lifetime; defaults to 7 days |
 | `REFRESH_TOKEN_GRACE_PERIOD` | No | Refresh-token rotation grace period; defaults to 15 seconds |
-| `COOKIE_SECURE` | No | Whether authentication cookies require HTTPS |
+| `COOKIE_SECURE` | No | Whether authentication cookies require HTTPS. Defaults to `false` only when `APP_ENV` is `development` (the default), `dev` or `test`, and to `true` in every other environment (`staging`, `production`, `prod`). `false` is rejected in `production` and `prod` |
+| `ALLOW_REGISTRATION` | No | Whether `POST /api/v1/auth/register` may create accounts: `true` or `false`, defaults to `false`. Any other value stops startup. When `false`, the endpoint answers `403 REGISTRATION_DISABLED`; administrators are created with `gostock admin create` |
 | `COOKIE_SAMESITE` | No | Cookie SameSite policy: `lax`, `strict`, or `none` |
 | `CORS_ALLOWED_ORIGINS` | Conditional | Comma-separated list of allowed browser origins |
 
@@ -435,8 +458,16 @@ openssl rand -base64 48
 
 - The JWT secret must contain at least 32 bytes.
 - Deployed CORS origins must use HTTPS and must not contain wildcard hosts.
-- Production requires secure cookies.
-- `COOKIE_SAMESITE=none` requires `COOKIE_SECURE=true`.
+- Authentication cookies are `Secure` by default. Only the local environments (`development`, `dev`, `test`) default to `Secure=false`, so the API works over plain HTTP on localhost. `COOKIE_SECURE` overrides the default.
+
+| `APP_ENV` | `COOKIE_SECURE` unset | `COOKIE_SECURE=true` | `COOKIE_SECURE=false` |
+|---|---|---|---|
+| `development` (default), `dev`, `test` | `Secure=false` | `Secure=true` | `Secure=false` |
+| `staging` | `Secure=true` | `Secure=true` | `Secure=false` |
+| `production`, `prod` | `Secure=true` | `Secure=true` | startup error |
+
+- `COOKIE_SAMESITE=none` requires `Secure=true`, whether it comes from the default or from `COOKIE_SECURE`; otherwise startup fails.
+- Self-registration is off unless `ALLOW_REGISTRATION=true`.
 
 These defaults are intended for local development only. Configure explicit secrets, origins, and cookie settings before deployment.
 
@@ -522,9 +553,12 @@ Specific codes:
 | `INVALID_LIMIT` | 400 | `invalid limit` |
 | `INVALID_EMAIL` | 400 | `invalid email` |
 | `INVALID_PASSWORD` | 400 | `invalid password` |
+| `INVALID_CURRENT_PASSWORD` | 400 | `current password is incorrect` (change-password) |
+| `PASSWORD_UNCHANGED` | 400 | `new password must differ from the current password` (change-password) |
 | `INVALID_CREDENTIALS` | 401 | `invalid email or password` |
 | `INVALID_SESSION` | 401 | `invalid or expired session` |
 | `INVALID_REFRESH_TOKEN` | 401 | `invalid or expired refresh token` (one code for unknown, revoked, expired and reused tokens) |
+| `REGISTRATION_DISABLED` | 403 | `registration is disabled` (`ALLOW_REGISTRATION` is not `true`) |
 | `PRODUCT_NOT_FOUND` | 404 | `Product not found` |
 | `USER_NOT_FOUND` | 404 | `user not found` |
 | `SKU_EXISTS` | 409 | `SKU already exists` |

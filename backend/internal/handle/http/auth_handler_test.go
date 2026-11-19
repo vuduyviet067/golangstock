@@ -139,7 +139,7 @@ func (m *mockTokenMgr) ValidateAccessToken(tokenStr string) (*dto.TokenClaims, e
 
 func setupTestAuthHandler(uRepo *mockUserRepo, rRepo *mockRefreshRepo) *AuthHandler {
 	tm := &mockTokenMgr{}
-	uc := usecase.NewAuthUseCase(uRepo, rRepo, tm, 15*time.Minute, 7*24*time.Hour, 15*time.Second)
+	uc := usecase.NewAuthUseCase(uRepo, rRepo, tm, 15*time.Minute, 7*24*time.Hour, 15*time.Second, usecase.WithRegistration(true))
 	cm := NewCookieManager(false, http.SameSiteLaxMode, 15*time.Minute, 7*24*time.Hour)
 	return NewAuthHandler(uc, cm)
 }

@@ -66,6 +66,10 @@ func MapError(err error) *dto.HTTPError {
 		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidEmail, Message: "invalid email", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidPassword):
 		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidPassword, Message: "invalid password", Cause: err}
+	case errors.Is(err, usecase.ErrInvalidCurrentPassword):
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidCurrentPassword, Message: "current password is incorrect", Cause: err}
+	case errors.Is(err, usecase.ErrPasswordUnchanged):
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codePasswordUnchanged, Message: "new password must differ from the current password", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidChartFrom):
 		return NewValidationError(invalidQueryMessage, map[string]string{"from": "must be a date in YYYY-MM-DD format"}, err)
 	case errors.Is(err, usecase.ErrInvalidChartTo):
@@ -94,6 +98,10 @@ func MapError(err error) *dto.HTTPError {
 		errors.Is(err, usecase.ErrRefreshTokenExpired),
 		errors.Is(err, usecase.ErrRefreshTokenReused):
 		return &dto.HTTPError{StatusCode: http.StatusUnauthorized, Code: codeInvalidRefreshToken, Message: "invalid or expired refresh token", Cause: err}
+
+	// 403 Forbidden — Self-registration is turned off (ALLOW_REGISTRATION)
+	case errors.Is(err, usecase.ErrRegistrationDisabled):
+		return &dto.HTTPError{StatusCode: http.StatusForbidden, Code: codeRegistrationDisabled, Message: "registration is disabled", Cause: err}
 
 	// 404 Not Found — Resource not found
 	case errors.Is(err, usecase.ErrProductNotFound):

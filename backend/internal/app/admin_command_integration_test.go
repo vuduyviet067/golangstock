@@ -43,7 +43,7 @@ func TestAdminCommand_PostgreSQL(t *testing.T) {
 		t.Fatal(err)
 	}
 	auth := usecase.NewAuthUseCase(postgres.NewUserRepository(db), postgres.NewRefreshTokenRepository(db), jwtService,
-		15*time.Minute, 7*24*time.Hour, 15*time.Second)
+		15*time.Minute, 7*24*time.Hour, 15*time.Second, usecase.WithRegistration(true))
 
 	run := func(stdin string, args ...string) (int, string, string) {
 		t.Helper()

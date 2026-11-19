@@ -21,4 +21,7 @@ type AppConfig struct {
 	CookieSecure            bool
 	CookieSameSite          http.SameSite
 	AllowedOrigins          []string
+	// AllowRegistration enables POST /api/v1/auth/register (ALLOW_REGISTRATION,
+	// default false).
+	AllowRegistration bool
 }

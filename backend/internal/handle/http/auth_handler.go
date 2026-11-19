@@ -125,6 +125,44 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	response.Success(w, http.StatusOK, "User profile retrieved successfully", h.useCase.Me(*user))
 }
 
+// ChangePassword serves POST /api/v1/auth/change-password for the
+// authenticated user. On success the user's refresh tokens are revoked and
+// both auth cookies are cleared, as on logout; the user logs in again.
+func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	userID, ok := currentActorID(w, r)
+	if !ok {
+		return
+	}
+	if !EnforceJSONContentType(w, r) {
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	var req dto.ChangePasswordRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, response.CodeValidationError, "invalid JSON request")
+		return
+	}
+
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		response.Error(w, http.StatusBadRequest, response.CodeValidationError, "request must contain exactly one JSON object")
+		return
+	}
+
+	if err := h.useCase.ChangePassword(r.Context(), userID, req.CurrentPassword, req.NewPassword); err != nil {
+		WriteError(w, r, err)
+		return
+	}
+
+	h.cookies.ClearAuthCookies(w)
+	response.Success(w, http.StatusOK, "password changed", nil)
+}
+
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	h.cookies.ClearAuthCookies(w)
 

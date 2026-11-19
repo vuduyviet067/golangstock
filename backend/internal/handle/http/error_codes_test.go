@@ -50,6 +50,9 @@ var mappedCodes = []struct {
 	{usecase.ErrProductSKUExists, "SKU_EXISTS"},
 	{usecase.ErrEmailExists, "EMAIL_EXISTS"},
 	{usecase.ErrInsufficientStock, "INSUFFICIENT_STOCK"},
+	{usecase.ErrRegistrationDisabled, "REGISTRATION_DISABLED"},
+	{usecase.ErrInvalidCurrentPassword, "INVALID_CURRENT_PASSWORD"},
+	{usecase.ErrPasswordUnchanged, "PASSWORD_UNCHANGED"},
 	{usecase.ErrInvalidTokenTTL, "INTERNAL_ERROR"},
 	{errors.New("pq: connection refused"), "INTERNAL_ERROR"},
 }

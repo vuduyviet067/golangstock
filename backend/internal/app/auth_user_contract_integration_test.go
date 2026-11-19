@@ -199,7 +199,7 @@ func TestAuthUserContract_PostgreSQL(t *testing.T) {
 		t.Fatalf("init jwt: %v", err)
 	}
 	userRepo := postgres.NewUserRepository(db)
-	authUC := usecase.NewAuthUseCase(userRepo, postgres.NewRefreshTokenRepository(db), jwtService, 15*time.Minute, 7*24*time.Hour, 15*time.Second)
+	authUC := usecase.NewAuthUseCase(userRepo, postgres.NewRefreshTokenRepository(db), jwtService, 15*time.Minute, 7*24*time.Hour, 15*time.Second, usecase.WithRegistration(true))
 	router := NewRouter(
 		db,
 		productHTTP.NewProductHandler(usecase.NewProductUseCase(postgres.NewProductRepository(db))),

@@ -294,7 +294,7 @@ func TestAuthContract_Register(t *testing.T) {
 // contractAuthHandler builds an AuthHandler around any user repository, with
 // the same token manager, TTLs and cookie settings as setupTestAuthHandler.
 func contractAuthHandler(users repository.UserRepository) *AuthHandler {
-	uc := usecase.NewAuthUseCase(users, &mockRefreshRepo{}, &mockTokenMgr{}, 15*time.Minute, 7*24*time.Hour, 15*time.Second)
+	uc := usecase.NewAuthUseCase(users, &mockRefreshRepo{}, &mockTokenMgr{}, 15*time.Minute, 7*24*time.Hour, 15*time.Second, usecase.WithRegistration(true))
 	return NewAuthHandler(uc, NewCookieManager(false, http.SameSiteLaxMode, 15*time.Minute, 7*24*time.Hour))
 }
 

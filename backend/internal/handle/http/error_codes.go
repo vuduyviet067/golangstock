@@ -17,6 +17,10 @@ const (
 	codeInvalidQuantity  = "INVALID_QUANTITY"
 	codeInvalidEmail     = "INVALID_EMAIL"
 	codeInvalidPassword  = "INVALID_PASSWORD"
+	// POST /api/v1/auth/change-password. Not 401: the frontend refreshes the
+	// session on 401, which a wrong current password must not trigger.
+	codeInvalidCurrentPassword = "INVALID_CURRENT_PASSWORD"
+	codePasswordUnchanged      = "PASSWORD_UNCHANGED"
 
 	// 401 Unauthorized.
 	codeInvalidCredentials = "INVALID_CREDENTIALS"
@@ -24,6 +28,9 @@ const (
 	// One code for every refresh token failure (unknown, revoked, expired,
 	// reused, malformed), like the shared message: the client learns no more.
 	codeInvalidRefreshToken = "INVALID_REFRESH_TOKEN"
+
+	// 403 Forbidden.
+	codeRegistrationDisabled = "REGISTRATION_DISABLED"
 
 	// 404 Not Found.
 	codeProductNotFound = "PRODUCT_NOT_FOUND"

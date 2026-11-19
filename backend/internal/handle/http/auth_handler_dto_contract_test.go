@@ -127,7 +127,7 @@ func TestAuthContract_WrongMethods(t *testing.T) {
 // same paths and lifetimes are kept, and the body is unchanged.
 func TestAuthContract_SecureStrictCookies(t *testing.T) {
 	newHandler := func(users *mockUserRepo, tokens *mockRefreshRepo) *AuthHandler {
-		uc := usecase.NewAuthUseCase(users, tokens, &mockTokenMgr{}, 15*time.Minute, 7*24*time.Hour, 15*time.Second)
+		uc := usecase.NewAuthUseCase(users, tokens, &mockTokenMgr{}, 15*time.Minute, 7*24*time.Hour, 15*time.Second, usecase.WithRegistration(true))
 		return NewAuthHandler(uc, NewCookieManager(true, http.SameSiteStrictMode, 15*time.Minute, 7*24*time.Hour))
 	}
 

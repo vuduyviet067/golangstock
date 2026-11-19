@@ -46,6 +46,7 @@ var specRoutes = []string{
 	"/api/v1/auth/refresh",
 	"/api/v1/auth/logout",
 	"/api/v1/auth/me",
+	"/api/v1/auth/change-password",
 	"/api/v1/products",
 	"/api/v1/products/1",
 	"/api/v1/products/1/movements",

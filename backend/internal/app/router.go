@@ -55,6 +55,10 @@ func NewRouter(
 			r.Use(authenticated)
 			r.Get("/", authHandler.Me)
 		})
+		r.Route("/auth/change-password", func(r chi.Router) {
+			r.Use(authenticated)
+			r.Post("/", authHandler.ChangePassword)
+		})
 		r.Route("/products", func(r chi.Router) {
 			r.Use(authenticated)
 			r.Get("/", productHandler.List)

@@ -41,6 +41,30 @@ func isDeployed(env string) bool {
 	return env == EnvStaging || isProduction(env)
 }
 
+// isLocalEnvironment reports whether env is a developer or test environment,
+// the only ones where auth cookies default to Secure=false (plain-HTTP
+// localhost). Every other environment defaults to Secure=true.
+func isLocalEnvironment(env string) bool {
+	return env == EnvDevelopment || env == EnvDev || env == EnvTest
+}
+
+// loadAllowRegistration reads ALLOW_REGISTRATION: whether anyone may create
+// an account with POST /api/v1/auth/register. Unset or empty means false; any
+// other value must be a boolean (strconv.ParseBool), so a typo cannot open
+// registration.
+func loadAllowRegistration() (bool, error) {
+	raw := os.Getenv("ALLOW_REGISTRATION")
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return false, nil
+	}
+	allowed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("ALLOW_REGISTRATION must be a boolean value (true/false), got %q", raw)
+	}
+	return allowed, nil
+}
+
 func deployedLabel(env string) string {
 	if isProduction(env) {
 		return EnvProduction
@@ -188,15 +212,15 @@ func Load() (dto.AppConfig, error) {
 		}
 	}
 
-	cookieSecure := false
+	// Secure by default; only the local environments default to false.
+	// COOKIE_SECURE overrides the default.
+	cookieSecure := !isLocalEnvironment(appEnv)
 	if val := os.Getenv("COOKIE_SECURE"); val != "" {
 		parsed, err := strconv.ParseBool(strings.TrimSpace(val))
 		if err != nil {
 			return dto.AppConfig{}, fmt.Errorf("COOKIE_SECURE must be a boolean value (true/false), got %q: %w", val, err)
 		}
 		cookieSecure = parsed
-	} else if isProduction(appEnv) {
-		cookieSecure = true
 	}
 
 	if isProduction(appEnv) && !cookieSecure {
@@ -228,6 +252,11 @@ func Load() (dto.AppConfig, error) {
 		return dto.AppConfig{}, err
 	}
 
+	allowRegistration, err := loadAllowRegistration()
+	if err != nil {
+		return dto.AppConfig{}, err
+	}
+
 	return dto.AppConfig{
 		AppEnv:                  appEnv,
 		DatabaseURL:             databaseURL,
@@ -242,5 +271,6 @@ func Load() (dto.AppConfig, error) {
 		CookieSecure:            cookieSecure,
 		CookieSameSite:          cookieSameSite,
 		AllowedOrigins:          allowedOrigins,
+		AllowRegistration:       allowRegistration,
 	}, nil
 }
