@@ -1,0 +1,199 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    # Explicit bash runs with -e -o pipefail: any failing command fails the step.
+    shell: bash
+
+jobs:
+  backend:
+    name: Backend (Go, PostgreSQL 17)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    services:
+      # A new, empty database for every run. Its credentials exist only in
+      # this job's container and are not secrets.
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: gostock_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d gostock_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/gostock_test?sslmode=disable
+      # Integration tests fail instead of skipping when the database is
+      # missing (internal/testdb).
+      REQUIRE_TEST_DATABASE: "true"
+      MIGRATE_VERSION: v4.20.1
+      # Must run and pass with every subtest; the report checker enforces it.
+      REQUIRED_TESTS: >-
+        TestDashboardRepository_InventorySummary,TestDashboardRepository_StockMovementBuckets,TestDashboardRepository_StockMovementBuckets_DaylightSaving,TestDashboardRepository_StockMovementBuckets_RepeatedMidnight,TestDashboard_EndToEnd
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+
+      - name: Check the database service
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          read -r name major tables < <(docker exec "$PG_CONTAINER" psql -U postgres -d gostock_test -At -F ' ' -c \
+            "SELECT current_database(), current_setting('server_version_num')::int / 10000,
+                    (SELECT count(*) FROM pg_tables WHERE schemaname = 'public')")
+          echo "database=$name postgres_major=$major public_tables=$tables"
+          if [ "$name" != gostock_test ] || [ "$major" != 17 ] || [ "$tables" != 0 ]; then
+            echo "::error::expected an empty gostock_test database on PostgreSQL 17"
+            exit 1
+          fi
+
+      - name: Install golang-migrate ${{ env.MIGRATE_VERSION }}
+        run: |
+          go install -tags 'postgres' "github.com/golang-migrate/migrate/v4/cmd/migrate@${MIGRATE_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Migrate the database from scratch
+        run: |
+          migrate -path migrations -database "$TEST_DATABASE_URL" up
+          newest=$(ls migrations/*.up.sql | sed -E 's#^.*/0*([0-9]+)_[^/]*$#\1#' | sort -n | tail -1)
+          current=$(migrate -path migrations -database "$TEST_DATABASE_URL" version 2>&1)
+          echo "newest migration file: $newest, database version: $current"
+          if [ "$current" != "$newest" ]; then
+            echo "::error::database is at version '$current', expected $newest (clean, not dirty)"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: Tests with PostgreSQL, run twice
+        # Two runs on the same database catch rows left behind by one run
+        # that break the next. After each run every public table but
+        # schema_migrations must be empty again.
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          for run in 1 2; do
+            echo "::group::go test, run $run"
+            report="$RUNNER_TEMP/go-test-run$run.json"
+            status=0
+            go test -json -count=1 ./... > "$report" || status=$?
+            node ../.github/scripts/go-test-report.mjs "$report" --no-skip --require="$REQUIRED_TESTS" || status=1
+            echo "::endgroup::"
+            if [ "$status" != 0 ]; then
+              echo "::error::go test run $run failed (see the report above)"
+              exit 1
+            fi
+
+            leftovers=$(docker exec "$PG_CONTAINER" psql -U postgres -d gostock_test -At -F '=' -c \
+              "SELECT table_name, n FROM (
+                 SELECT table_name,
+                        (xpath('/row/n/text()', query_to_xml(format('SELECT count(*) AS n FROM public.%I', table_name), false, true, '')))[1]::text::bigint AS n
+                 FROM information_schema.tables
+                 WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name <> 'schema_migrations'
+               ) AS counts WHERE n > 0 ORDER BY 1")
+            if [ -n "$leftovers" ]; then
+              echo "::error::rows left behind after run $run: $(echo $leftovers)"
+              exit 1
+            fi
+            echo "run $run: no rows left behind"
+          done
+
+      - name: Production build embeds tzdata
+        # CR-1: the executable must carry its own time zone database.
+        run: |
+          go build -trimpath -o "$RUNNER_TEMP/gostock" .
+          count=$(go tool nm "$RUNNER_TEMP/gostock" | grep -c 'time/tzdata.loadFromEmbeddedTZData' || true)
+          if [ "$count" -lt 1 ]; then
+            echo "::error::time/tzdata is not linked into the production executable"
+            exit 1
+          fi
+          echo "time/tzdata is linked ($(stat -c %s "$RUNNER_TEMP/gostock") bytes)"
+
+  tzdata-smoke:
+    name: Embedded tzdata without system zoneinfo (Linux container)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Build the static test binary of package main
+        working-directory: backend
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p "$RUNNER_TEMP/smoke"
+          go test -c -trimpath -o "$RUNNER_TEMP/smoke/gostock-main.test" .
+
+      - name: Load Asia/Ho_Chi_Minh in a container without zoneinfo
+        # busybox has no zoneinfo; the script fails if that ever changes, so
+        # the test cannot pass on the system database by accident. GOROOT
+        # points nowhere, so only the embedded copy is left.
+        run: |
+          docker run --rm -v "$RUNNER_TEMP/smoke:/smoke:ro" -e GOROOT=/nonexistent busybox:1.37.0 sh -c '
+            for dir in /usr/share/zoneinfo /usr/share/lib/zoneinfo /usr/lib/locale/TZ /etc/zoneinfo; do
+              if [ -e "$dir" ]; then echo "the container has $dir; the smoke test would prove nothing" >&2; exit 1; fi
+            done
+            exec /smoke/gostock-main.test -test.run "^TestDashboardTimezonesLoadWithProductionImports$" -test.v
+          '
+
+  frontend:
+    name: Frontend dashboard tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Dashboard tests (UTC, America/Santiago, Pacific/Kiritimati)
+        run: npm run test:dashboard

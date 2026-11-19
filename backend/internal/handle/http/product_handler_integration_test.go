@@ -165,6 +165,21 @@ func createIntegrationActor(t *testing.T, db *sql.DB) int64 {
 	return id
 }
 
+// cleanupProductBySKU registers the deletion of the product a test creates
+// through the API, found by its SKU (unique to the test), so it can be
+// registered before the create request returns an ID. Call it after
+// createIntegrationActor: cleanups run last-in first-out, so the product is
+// deleted first (its movements keep their history, product_id cleared) and
+// the actor's cleanup then removes those movements and the actor.
+func cleanupProductBySKU(t *testing.T, db *sql.DB, sku string) {
+	t.Helper()
+	t.Cleanup(func() {
+		if _, err := db.Exec(`DELETE FROM products WHERE sku = $1`, sku); err != nil {
+			t.Errorf("cleanup test product %s: %v", sku, err)
+		}
+	})
+}
+
 // movementRow is the part of a stock movement the integration tests compare.
 type movementRow struct {
 	Type   string
@@ -313,6 +328,10 @@ func TestProductMinimumStockRoundTrip(t *testing.T) {
 		return envelope.Data
 	}
 
+	// Registered before the create request, so that a failed status check or
+	// decode below cannot leave the product behind.
+	cleanupProductBySKU(t, db, sku)
+
 	// 1. Create with an explicit threshold.
 	rec := send(stdhttp.MethodPost, "/api/v1/products",
 		fmt.Sprintf(`{"sku":%q,"name":"Min Stock Test","price":10,"quantity":6,"minimum_stock":3}`, sku), handler.Create)
@@ -321,11 +340,6 @@ func TestProductMinimumStockRoundTrip(t *testing.T) {
 	}
 	created := decodeProduct(rec)
 	id := created.ID
-	defer func() {
-		if _, err := db.Exec(`DELETE FROM products WHERE id = $1`, id); err != nil {
-			t.Errorf("cleanup test product: %v", err)
-		}
-	}()
 	if created.MinimumStock != 3 || created.Quantity != 6 {
 		t.Fatalf("created product = %+v, want minimum_stock 3 and quantity 6", created)
 	}
@@ -421,6 +435,10 @@ func TestProductCreateWithoutMinimumStockDefaultsToZero(t *testing.T) {
 	handler := NewProductHandler(usecase.NewProductUseCase(postgres.NewProductRepository(db)))
 	actorID := createIntegrationActor(t, db)
 
+	// Registered before the create request: a failed status check must not
+	// leave the product behind.
+	cleanupProductBySKU(t, db, sku)
+
 	req := httptest.NewRequest(stdhttp.MethodPost, "/api/v1/products",
 		strings.NewReader(fmt.Sprintf(`{"sku":%q,"name":"Default Min","price":1,"quantity":0}`, sku)))
 	req.Header.Set("Content-Type", "application/json")
@@ -430,11 +448,6 @@ func TestProductCreateWithoutMinimumStockDefaultsToZero(t *testing.T) {
 	if rec.Code != stdhttp.StatusCreated {
 		t.Fatalf("create status = %d; body = %s", rec.Code, rec.Body.String())
 	}
-	defer func() {
-		if _, err := db.Exec(`DELETE FROM products WHERE sku = $1`, sku); err != nil {
-			t.Errorf("cleanup test product: %v", err)
-		}
-	}()
 
 	var minimumStock int
 	if err := db.QueryRow(`SELECT minimum_stock FROM products WHERE sku = $1`, sku).Scan(&minimumStock); err != nil {
@@ -474,6 +487,10 @@ func TestProductHandlerConcurrentStockMovementsConsistent(t *testing.T) {
 		return rec
 	}
 
+	// Registered before the create request, so that a failed status check or
+	// decode below cannot leave the product behind.
+	cleanupProductBySKU(t, db, sku)
+
 	rec := post("/api/v1/products",
 		fmt.Sprintf(`{"sku":%q,"name":"Concurrent Moves","price":1,"quantity":10}`, sku), handler.Create)
 	if rec.Code != stdhttp.StatusCreated {
@@ -486,11 +503,6 @@ func TestProductHandlerConcurrentStockMovementsConsistent(t *testing.T) {
 		t.Fatalf("decode create response: %v", err)
 	}
 	id := created.Data.ID
-	defer func() {
-		if _, err := db.Exec(`DELETE FROM products WHERE id = $1`, id); err != nil {
-			t.Errorf("cleanup test product: %v", err)
-		}
-	}()
 
 	const requests = 40
 	type result struct {

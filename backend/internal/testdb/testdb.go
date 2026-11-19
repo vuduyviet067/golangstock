@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,13 +15,28 @@ import (
 
 const EnvVar = "TEST_DATABASE_URL"
 
+// RequireEnvVar makes the PostgreSQL integration tests mandatory. CI sets it
+// to true: a missing TEST_DATABASE_URL then fails the test instead of
+// skipping it, so a run without a database cannot pass. Unset (local
+// development), a missing TEST_DATABASE_URL still skips. A value that is not
+// a boolean fails, so a typo cannot turn the requirement off.
+const RequireEnvVar = "REQUIRE_TEST_DATABASE"
+
 const RequiredName = "gostock_test"
 
 func Open(t testing.TB) *sql.DB {
 	t.Helper()
 
+	required, err := Required()
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
 	dsn := os.Getenv(EnvVar)
 	if dsn == "" {
+		if required {
+			t.Fatalf("%s is not set, but %s requires the PostgreSQL integration tests to run", EnvVar, RequireEnvVar)
+		}
 		t.Skipf("%s is not set; skipping PostgreSQL integration test", EnvVar)
 	}
 
@@ -40,6 +57,21 @@ func Open(t testing.TB) *sql.DB {
 		t.Fatalf("refusing to run integration test: %v", err)
 	}
 	return db
+}
+
+// Required reports whether RequireEnvVar makes the integration tests
+// mandatory: false when it is unset or empty, its value when it is a boolean
+// (strconv.ParseBool), and an error otherwise.
+func Required() (bool, error) {
+	value := strings.TrimSpace(os.Getenv(RequireEnvVar))
+	if value == "" {
+		return false, nil
+	}
+	required, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s=%q is not a boolean (use true or false)", RequireEnvVar, value)
+	}
+	return required, nil
 }
 
 func CheckName(name string) error {

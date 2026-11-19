@@ -51,6 +51,8 @@ func TestStockMovementHistory_EndToEnd(t *testing.T) {
 	defer cancel()
 
 	suffix := time.Now().UnixNano()
+	// Each user's cleanup is registered as soon as the user exists, so that a
+	// failure creating the second one cannot leave the first behind.
 	createUser := func(role string) *domain.User {
 		var id int64
 		email := fmt.Sprintf("history-%s-%d@example.test", role, suffix)
@@ -59,17 +61,26 @@ func TestStockMovementHistory_EndToEnd(t *testing.T) {
 		).Scan(&id); err != nil {
 			t.Fatalf("create %s: %v", role, err)
 		}
+		t.Cleanup(func() {
+			if _, err := db.Exec(`DELETE FROM users WHERE id = $1`, id); err != nil {
+				t.Errorf("cleanup %s user %d: %v", role, id, err)
+			}
+		})
 		return &domain.User{ID: id, Email: email, Role: role}
 	}
 	admin := createUser(usecase.RoleAdmin)
 	user := createUser(usecase.RoleUser)
 	sku := fmt.Sprintf("HISTORY-E2E-%d", suffix)
 
-	// Movements must go before their actors (ON DELETE RESTRICT).
+	// Movements must go before their actors (ON DELETE RESTRICT). Cleanups
+	// run last-in first-out, so this one runs before the users' cleanups.
 	t.Cleanup(func() {
-		_, _ = db.Exec(`DELETE FROM stock_movements WHERE product_sku = $1`, sku)
-		_, _ = db.Exec(`DELETE FROM products WHERE sku = $1`, sku)
-		_, _ = db.Exec(`DELETE FROM users WHERE id IN ($1, $2)`, admin.ID, user.ID)
+		if _, err := db.Exec(`DELETE FROM stock_movements WHERE product_sku = $1`, sku); err != nil {
+			t.Errorf("cleanup movements of %s: %v", sku, err)
+		}
+		if _, err := db.Exec(`DELETE FROM products WHERE sku = $1`, sku); err != nil {
+			t.Errorf("cleanup product %s: %v", sku, err)
+		}
 	})
 
 	productRepo := postgres.NewProductRepository(db)

@@ -514,6 +514,7 @@ The embedded database only serves Go. PostgreSQL converts timestamps with its ow
 PostgreSQL integration tests use a dedicated test database configured by `TEST_DATABASE_URL`. They never read `DATABASE_URL`, so loading `.env` cannot point them at the development database.
 
 - If `TEST_DATABASE_URL` is not set, integration tests are skipped. A skipped integration test is not a passed test.
+- With `REQUIRE_TEST_DATABASE=true` (as in CI), a missing `TEST_DATABASE_URL` fails the integration tests instead of skipping them. A value that is not a boolean also fails. A database that cannot be reached always fails, whether or not the variable is set.
 - Before any test writes data, it checks `current_database()`. The test fails immediately unless the database is named exactly `gostock_test`. Any other name fails, including `gostock_ui_test`, which is reserved for manual UI testing.
 
 Integration tests insert and delete products and users and create refresh tokens. Use a database that you are allowed to modify, never a shared or production database.
@@ -536,6 +537,31 @@ To set the variable for a single run without exporting it:
 ```bash
 TEST_DATABASE_URL='postgres://postgres:YOUR_PASSWORD@localhost:5432/gostock_test?sslmode=disable' go test -count=1 ./...
 ```
+
+### Run the frontend dashboard tests
+
+From `frontend/`, after `npm ci`:
+
+```bash
+npm run test:dashboard
+```
+
+It type-checks the tests and runs them once per time zone (UTC, America/Santiago, Pacific/Kiritimati). It needs no backend or database.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request:
+
+- **backend**:
+  - Starts a new, empty PostgreSQL 17 service database (`gostock_test`) and checks it.
+  - Applies every migration with golang-migrate from scratch, then checks that the database is at the newest migration file and is not dirty.
+  - Runs `go vet ./...` and `go build ./...`.
+  - Runs `go test -json -count=1 ./...` twice with `REQUIRE_TEST_DATABASE=true`. After each run, `.github/scripts/go-test-report.mjs` fails the job on any failed or skipped test or subtest, or if a required dashboard test did not run with all its subtests passing. The job also fails if a test leaves rows in any public table other than `schema_migrations`.
+  - Checks that the production build embeds `time/tzdata`.
+- **tzdata-smoke**: builds the static test binary of `package main` and runs the time zone smoke test in a `busybox` container, which has no zoneinfo.
+- **frontend**: `npm ci`, then `npm run test:dashboard`.
+
+The CI database and its credentials exist only inside the job. CI never connects to a developer or production database.
 
 ### Run the application against the UI test database
 
