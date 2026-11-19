@@ -12,7 +12,7 @@ import (
 // A user repository that returns (nil, nil) yields the existing 404 response
 // through the current error mapping, with no write (Step 4.2).
 func TestUserHandler_RepositoryReturnsNilNil(t *testing.T) {
-	const notFound = `{"success":false,"message":"user not found","data":null}`
+	const notFound = `{"success":false,"code":"USER_NOT_FOUND","message":"user not found","data":null}`
 
 	newRepo := func(t *testing.T) *mockUserRepoForHandler {
 		return &mockUserRepoForHandler{

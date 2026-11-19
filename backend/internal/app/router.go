@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	productHTTP "gostock/internal/handle/http"
-	"gostock/internal/handle/http/response"
+	"gostock/pkg/response"
 )
 
 func NewRouter(
@@ -57,7 +57,7 @@ func NewRouter(
 			createHandler.ServeHTTP(w, r)
 		default:
 			w.Header().Set("Allow", "GET, POST")
-			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+			response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		}
 	})))
 
@@ -92,7 +92,7 @@ func NewRouter(
 			deleteHandler.ServeHTTP(w, r)
 		default:
 			w.Header().Set("Allow", "GET, PUT, DELETE")
-			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+			response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		}
 	})))
 
@@ -106,7 +106,7 @@ func NewRouter(
 				return
 			}
 			w.Header().Set("Allow", "GET")
-			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+			response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		}))))
 
 		mux.Handle("/api/v1/users/", authMiddleware(productHTTP.RequireAdmin(http.HandlerFunc(func(
@@ -120,7 +120,7 @@ func NewRouter(
 				userHandler.Update(w, r)
 			default:
 				w.Header().Set("Allow", "GET, PATCH")
-				response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+				response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 			}
 		}))))
 	}

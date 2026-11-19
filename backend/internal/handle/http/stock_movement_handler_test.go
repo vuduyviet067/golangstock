@@ -175,26 +175,27 @@ func TestStockMovementHandler_RejectsInvalidRequests(t *testing.T) {
 		repoErr     error
 		wantStatus  int
 		wantMessage string
+		wantCode    string
 		wantAllow   string
 	}{
-		{"non-numeric product ID", http.MethodGet, "/api/v1/products/abc/movements", byProduct, nil, nil, http.StatusBadRequest, "invalid product ID", ""},
-		{"zero product ID", http.MethodGet, "/api/v1/products/0/movements", byProduct, nil, nil, http.StatusBadRequest, "invalid product ID", ""},
-		{"SQL in product ID", http.MethodGet, "/api/v1/products/1%3BDROP%20TABLE%20stock_movements/movements", byProduct, nil, nil, http.StatusBadRequest, "invalid product ID", ""},
-		{"extra path segment", http.MethodGet, "/api/v1/products/1/x/movements", byProduct, nil, nil, http.StatusBadRequest, "invalid product ID", ""},
-		{"product: non-numeric page", http.MethodGet, "/api/v1/products/7/movements?page=abc", byProduct, nil, nil, http.StatusBadRequest, "invalid page", ""},
-		{"product: SQL in page", http.MethodGet, "/api/v1/products/7/movements?page=1%3BDROP%20TABLE%20stock_movements", byProduct, nil, nil, http.StatusBadRequest, "invalid page", ""},
-		{"product: zero page", http.MethodGet, "/api/v1/products/7/movements?page=0", byProduct, nil, nil, http.StatusBadRequest, "invalid page", ""},
-		{"product: non-numeric limit", http.MethodGet, "/api/v1/products/7/movements?limit=ten", byProduct, nil, nil, http.StatusBadRequest, "invalid limit", ""},
-		{"product: limit above 100", http.MethodGet, "/api/v1/products/7/movements?limit=101", byProduct, nil, nil, http.StatusBadRequest, "invalid limit", ""},
-		{"product not found", http.MethodGet, "/api/v1/products/99/movements", byProduct, repository.ErrProductNotFound, nil, http.StatusNotFound, "Product not found", ""},
-		{"product: repository error", http.MethodGet, "/api/v1/products/7/movements", byProduct, nil, errors.New("connection reset"), http.StatusInternalServerError, "Internal server error", ""},
-		{"product: wrong method", http.MethodPost, "/api/v1/products/7/movements", byProduct, nil, nil, http.StatusMethodNotAllowed, "method not allowed", http.MethodGet},
-		{"global: non-numeric page", http.MethodGet, "/api/v1/stock-movements?page=x", global, nil, nil, http.StatusBadRequest, "invalid page", ""},
-		{"global: SQL in limit", http.MethodGet, "/api/v1/stock-movements?limit=10%20OR%201%3D1", global, nil, nil, http.StatusBadRequest, "invalid limit", ""},
-		{"global: negative page", http.MethodGet, "/api/v1/stock-movements?page=-1", global, nil, nil, http.StatusBadRequest, "invalid page", ""},
-		{"global: zero limit", http.MethodGet, "/api/v1/stock-movements?limit=0", global, nil, nil, http.StatusBadRequest, "invalid limit", ""},
-		{"global: repository error", http.MethodGet, "/api/v1/stock-movements", global, nil, errors.New("connection reset"), http.StatusInternalServerError, "Internal server error", ""},
-		{"global: wrong method", http.MethodDelete, "/api/v1/stock-movements", global, nil, nil, http.StatusMethodNotAllowed, "method not allowed", http.MethodGet},
+		{"non-numeric product ID", http.MethodGet, "/api/v1/products/abc/movements", byProduct, nil, nil, http.StatusBadRequest, "invalid product ID", "INVALID_PRODUCT_ID", ""},
+		{"zero product ID", http.MethodGet, "/api/v1/products/0/movements", byProduct, nil, nil, http.StatusBadRequest, "invalid product ID", "INVALID_PRODUCT_ID", ""},
+		{"SQL in product ID", http.MethodGet, "/api/v1/products/1%3BDROP%20TABLE%20stock_movements/movements", byProduct, nil, nil, http.StatusBadRequest, "invalid product ID", "INVALID_PRODUCT_ID", ""},
+		{"extra path segment", http.MethodGet, "/api/v1/products/1/x/movements", byProduct, nil, nil, http.StatusBadRequest, "invalid product ID", "INVALID_PRODUCT_ID", ""},
+		{"product: non-numeric page", http.MethodGet, "/api/v1/products/7/movements?page=abc", byProduct, nil, nil, http.StatusBadRequest, "invalid page", "INVALID_PAGE", ""},
+		{"product: SQL in page", http.MethodGet, "/api/v1/products/7/movements?page=1%3BDROP%20TABLE%20stock_movements", byProduct, nil, nil, http.StatusBadRequest, "invalid page", "INVALID_PAGE", ""},
+		{"product: zero page", http.MethodGet, "/api/v1/products/7/movements?page=0", byProduct, nil, nil, http.StatusBadRequest, "invalid page", "INVALID_PAGE", ""},
+		{"product: non-numeric limit", http.MethodGet, "/api/v1/products/7/movements?limit=ten", byProduct, nil, nil, http.StatusBadRequest, "invalid limit", "INVALID_LIMIT", ""},
+		{"product: limit above 100", http.MethodGet, "/api/v1/products/7/movements?limit=101", byProduct, nil, nil, http.StatusBadRequest, "invalid limit", "INVALID_LIMIT", ""},
+		{"product not found", http.MethodGet, "/api/v1/products/99/movements", byProduct, repository.ErrProductNotFound, nil, http.StatusNotFound, "Product not found", "PRODUCT_NOT_FOUND", ""},
+		{"product: repository error", http.MethodGet, "/api/v1/products/7/movements", byProduct, nil, errors.New("connection reset"), http.StatusInternalServerError, "Internal server error", "INTERNAL_ERROR", ""},
+		{"product: wrong method", http.MethodPost, "/api/v1/products/7/movements", byProduct, nil, nil, http.StatusMethodNotAllowed, "method not allowed", "METHOD_NOT_ALLOWED", http.MethodGet},
+		{"global: non-numeric page", http.MethodGet, "/api/v1/stock-movements?page=x", global, nil, nil, http.StatusBadRequest, "invalid page", "INVALID_PAGE", ""},
+		{"global: SQL in limit", http.MethodGet, "/api/v1/stock-movements?limit=10%20OR%201%3D1", global, nil, nil, http.StatusBadRequest, "invalid limit", "INVALID_LIMIT", ""},
+		{"global: negative page", http.MethodGet, "/api/v1/stock-movements?page=-1", global, nil, nil, http.StatusBadRequest, "invalid page", "INVALID_PAGE", ""},
+		{"global: zero limit", http.MethodGet, "/api/v1/stock-movements?limit=0", global, nil, nil, http.StatusBadRequest, "invalid limit", "INVALID_LIMIT", ""},
+		{"global: repository error", http.MethodGet, "/api/v1/stock-movements", global, nil, errors.New("connection reset"), http.StatusInternalServerError, "Internal server error", "INTERNAL_ERROR", ""},
+		{"global: wrong method", http.MethodDelete, "/api/v1/stock-movements", global, nil, nil, http.StatusMethodNotAllowed, "method not allowed", "METHOD_NOT_ALLOWED", http.MethodGet},
 	}
 
 	for _, tt := range tests {
@@ -209,7 +210,7 @@ func TestStockMovementHandler_RejectsInvalidRequests(t *testing.T) {
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
 			}
-			wantBody := `{"success":false,"message":"` + tt.wantMessage + `","data":null}`
+			wantBody := `{"success":false,"code":"` + tt.wantCode + `","message":"` + tt.wantMessage + `","data":null}`
 			if got := strings.TrimSpace(rec.Body.String()); got != wantBody {
 				t.Errorf("body = %s, want %s", got, wantBody)
 			}

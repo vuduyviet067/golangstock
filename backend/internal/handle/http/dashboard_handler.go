@@ -4,8 +4,8 @@ import (
 	"net/http"
 
 	"gostock/internal/dto"
-	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
+	"gostock/pkg/response"
 )
 
 // DashboardHandler serves the read-only dashboard figures.
@@ -23,7 +23,7 @@ func NewDashboardHandler(uc *usecase.DashboardUseCase) *DashboardHandler {
 func (h *DashboardHandler) Summary(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -41,7 +41,7 @@ func (h *DashboardHandler) Summary(w http.ResponseWriter, r *http.Request) {
 func (h *DashboardHandler) StockMovementChart(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 

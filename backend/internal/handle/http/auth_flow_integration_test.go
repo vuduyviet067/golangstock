@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"gostock/internal/domain"
-	"gostock/internal/dto"
 	"gostock/internal/platform/jwt"
 	"gostock/internal/repository/postgres"
 	"gostock/internal/testdb"
 	"gostock/internal/usecase"
+	"gostock/pkg/response"
 )
 
 func TestAuthFlow_FullLifecycle_Mock(t *testing.T) {
@@ -80,7 +80,7 @@ func TestAuthFlow_FullLifecycle_Mock(t *testing.T) {
 		t.Fatalf("Me failed: status = %d, body: %s", rec.Code, rec.Body.String())
 	}
 
-	var meResp dto.APIResponse
+	var meResp response.APIResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &meResp)
 	meData := meResp.Data.(map[string]any)
 	if meData["email"] != "testflow@example.com" {

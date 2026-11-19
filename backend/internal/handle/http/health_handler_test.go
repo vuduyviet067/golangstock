@@ -29,7 +29,7 @@ func TestHealthHandler_RejectsOtherMethods(t *testing.T) {
 			HealthHandler(rec, httptest.NewRequest(method, "/health", nil))
 
 			contractAssertResponse(t, rec, http.StatusMethodNotAllowed,
-				`{"success":false,"message":"method not allowed","data":null}`)
+				`{"success":false,"code":"METHOD_NOT_ALLOWED","message":"method not allowed","data":null}`)
 			if got := rec.Header().Get("Allow"); got != http.MethodGet {
 				t.Errorf("Allow = %q, want %q", got, http.MethodGet)
 			}

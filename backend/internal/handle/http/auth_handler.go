@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"gostock/internal/dto"
-	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
+	"gostock/pkg/response"
 )
 
 type AuthHandler struct {
@@ -30,7 +30,7 @@ func NewAuthHandler(uc *usecase.AuthUseCase, cookies *CookieManager) *AuthHandle
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -45,13 +45,13 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "invalid JSON request")
+		response.Error(w, http.StatusBadRequest, response.CodeValidationError, "invalid JSON request")
 		return
 	}
 
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		response.Error(w, http.StatusBadRequest, "request must contain exactly one JSON object")
+		response.Error(w, http.StatusBadRequest, response.CodeValidationError, "request must contain exactly one JSON object")
 		return
 	}
 
@@ -67,7 +67,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -82,13 +82,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "invalid JSON request")
+		response.Error(w, http.StatusBadRequest, response.CodeValidationError, "invalid JSON request")
 		return
 	}
 
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		response.Error(w, http.StatusBadRequest, "request must contain exactly one JSON object")
+		response.Error(w, http.StatusBadRequest, response.CodeValidationError, "request must contain exactly one JSON object")
 		return
 	}
 
@@ -106,13 +106,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	cookie, err := r.Cookie(RefreshTokenCookieName)
 	if err != nil || cookie.Value == "" {
-		response.Error(w, http.StatusUnauthorized, "refresh token required")
+		response.Error(w, http.StatusUnauthorized, response.CodeUnauthenticated, "refresh token required")
 		return
 	}
 
@@ -136,13 +136,13 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	user, ok := CurrentUser(r.Context())
 	if !ok || user == nil {
-		response.Error(w, http.StatusUnauthorized, "authentication required")
+		response.Error(w, http.StatusUnauthorized, response.CodeUnauthenticated, "authentication required")
 		return
 	}
 
@@ -152,7 +152,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 

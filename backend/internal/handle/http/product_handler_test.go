@@ -719,7 +719,7 @@ func TestUpdateRejectsQuantity(t *testing.T) {
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
 			}
-			wantBody := `{"success":false,"message":"quantity cannot be updated; use stock-in or stock-out","data":null}`
+			wantBody := `{"success":false,"code":"VALIDATION_ERROR","message":"quantity cannot be updated; use stock-in or stock-out","data":null}`
 			if got := strings.TrimSpace(rec.Body.String()); got != wantBody {
 				t.Errorf("body = %s, want %s", got, wantBody)
 			}
@@ -1309,7 +1309,7 @@ func TestStockChangesUseAuthenticatedActor(t *testing.T) {
 			if rec.Code != http.StatusUnauthorized {
 				t.Fatalf("status = %d, want 401; body = %s", rec.Code, rec.Body.String())
 			}
-			wantBody := `{"success":false,"message":"authentication required","data":null}`
+			wantBody := `{"success":false,"code":"UNAUTHENTICATED","message":"authentication required","data":null}`
 			if got := strings.TrimSpace(rec.Body.String()); got != wantBody {
 				t.Errorf("body = %s, want %s", got, wantBody)
 			}

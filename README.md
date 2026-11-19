@@ -114,7 +114,6 @@ gostock/
 │   │   ├── domain/
 │   │   ├── handle/
 │   │   │   └── http/
-│   │   │       ├── response/
 │   │   │       └── ... handlers and middleware
 │   │   ├── platform/
 │   │   │   ├── database/
@@ -123,6 +122,8 @@ gostock/
 │   │   │   └── postgres/
 │   │   └── usecase/
 │   ├── migrations/
+│   ├── pkg/
+│   │   └── response/
 │   ├── main.go
 │   ├── go.mod
 │   └── go.sum
@@ -423,7 +424,14 @@ These defaults are intended for local development only. Configure explicit secre
 
 ## API Response Format
 
-The API uses a standardized response envelope.
+The API uses a standardized response envelope, written by the shared package `backend/pkg/response`:
+
+| Field | Type | Present | Meaning |
+| --- | --- | --- | --- |
+| `success` | boolean | always | `true` for 2xx responses, `false` for errors |
+| `code` | string | errors only | Machine-readable error code in `UPPER_SNAKE_CASE`; never present on success |
+| `message` | string | always | Human-readable message; do not compare it in client code, use `code` |
+| `data` | any | always | Payload; `null` on most errors, `{"fields": {...}}` on validation errors |
 
 Successful response example:
 
@@ -444,14 +452,69 @@ Error response example:
 ```json
 {
   "success": false,
+  "code": "PRODUCT_NOT_FOUND",
   "message": "Product not found",
   "data": null
 }
 ```
 
+Validation error example (query parameters of the dashboard):
+
+```json
+{
+  "success": false,
+  "code": "VALIDATION_ERROR",
+  "message": "invalid query parameters",
+  "data": { "fields": { "tz": "must be an IANA time zone name" } }
+}
+```
+
 Paginated responses include pagination metadata inside `data`.
 
-HTTP status codes are used to distinguish successful requests, validation errors, authentication failures, authorization failures, missing resources, and internal errors.
+HTTP status codes are used to distinguish successful requests, validation errors, authentication failures, authorization failures, missing resources, and internal errors. Within a status, `code` tells the cases apart.
+
+### Error codes
+
+General codes, used when an error has no more specific code:
+
+| Code | HTTP | When |
+| --- | --- | --- |
+| `VALIDATION_ERROR` | 400 | Invalid request: malformed or extra JSON, a field rejected by the handler, or invalid query parameters (details in `data.fields`) |
+| `UNAUTHENTICATED` | 401 | No valid access token (`authentication required`, `invalid or expired token`), no refresh cookie (`refresh token required`), or the authenticated user no longer exists |
+| `FORBIDDEN` | 403 | Role not allowed (`forbidden: admin role required`) or cross-origin request rejected |
+| `NOT_FOUND` | 404 | Resource not found, when no specific code applies |
+| `METHOD_NOT_ALLOWED` | 405 | HTTP method not supported by the route; the `Allow` header lists the allowed methods |
+| `CONFLICT` | 409 | Conflict, when no specific code applies |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 | `Content-Type` is not `application/json` |
+| `INTERNAL_ERROR` | 500 | Unexpected server error; the cause is logged, never returned |
+| `SERVICE_UNAVAILABLE` | 503 | Readiness probe cannot reach the database |
+
+Specific codes:
+
+| Code | HTTP | Message |
+| --- | --- | --- |
+| `INVALID_PRODUCT_ID` | 400 | `invalid product ID` |
+| `INVALID_PRODUCT` | 400 | `Invalid product` |
+| `INVALID_QUANTITY` | 400 | `quantity must be greater than 0` |
+| `INVALID_USER_ID` | 400 | `invalid user ID` |
+| `INVALID_USER` | 400 | `invalid user` |
+| `INVALID_USER_ROLE` | 400 | `invalid user role` |
+| `EMPTY_UPDATE` | 400 | `at least one field must be provided for update` |
+| `INVALID_PAGE` | 400 | `invalid page` |
+| `INVALID_LIMIT` | 400 | `invalid limit` |
+| `INVALID_EMAIL` | 400 | `invalid email` |
+| `INVALID_PASSWORD` | 400 | `invalid password` |
+| `INVALID_CREDENTIALS` | 401 | `invalid email or password` |
+| `INVALID_SESSION` | 401 | `invalid or expired session` |
+| `INVALID_REFRESH_TOKEN` | 401 | `invalid or expired refresh token` (one code for unknown, revoked, expired and reused tokens) |
+| `PRODUCT_NOT_FOUND` | 404 | `Product not found` |
+| `USER_NOT_FOUND` | 404 | `user not found` |
+| `SKU_EXISTS` | 409 | `SKU already exists` |
+| `EMAIL_EXISTS` | 409 | `email already exists` |
+| `INSUFFICIENT_STOCK` | 409 | `Insufficient stock` |
+| `CONCURRENT_REFRESH` | 409 | `concurrent refresh in progress` |
+
+Codes are assigned in the HTTP layer (`MapError` in `backend/internal/handle/http/error_mapper.go` and the handlers), never in use cases. A message always comes with the same code.
 
 ## Testing
 

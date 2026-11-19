@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"gostock/internal/dto"
-	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
+	"gostock/pkg/response"
 )
 
 type ProductHandler struct {
@@ -58,7 +58,7 @@ func updateProductInput(id int64, req dto.UpdateProductRequest) dto.UpdateProduc
 func currentActorID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	user, ok := CurrentUser(r.Context())
 	if !ok {
-		response.Error(w, http.StatusUnauthorized, "authentication required")
+		response.Error(w, http.StatusUnauthorized, response.CodeUnauthenticated, "authentication required")
 		return 0, false
 	}
 	return user.ID, true
@@ -67,19 +67,19 @@ func currentActorID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 func (h *ProductHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/products/")
 	if rawID == "" || strings.Contains(rawID, "/") {
-		response.Error(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")
 		return
 	}
 
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil {
-		response.Error(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")
 		return
 	}
 
@@ -94,7 +94,7 @@ func (h *ProductHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -105,7 +105,7 @@ func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 	if rawPage := query.Get("page"); rawPage != "" {
 		parsed, err := strconv.Atoi(rawPage)
 		if err != nil {
-			response.Error(w, http.StatusBadRequest, "invalid page")
+			response.Error(w, http.StatusBadRequest, codeInvalidPage, "invalid page")
 			return
 		}
 		page = parsed
@@ -114,7 +114,7 @@ func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 	if rawLimit := query.Get("limit"); rawLimit != "" {
 		parsed, err := strconv.Atoi(rawLimit)
 		if err != nil {
-			response.Error(w, http.StatusBadRequest, "invalid limit")
+			response.Error(w, http.StatusBadRequest, codeInvalidLimit, "invalid limit")
 			return
 		}
 		limit = parsed
@@ -138,7 +138,7 @@ func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -154,13 +154,13 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "Invalid JSON request")
+		response.Error(w, http.StatusBadRequest, response.CodeValidationError, "Invalid JSON request")
 		return
 	}
 
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
-		response.Error(w, http.StatusBadRequest, "Request must contain one JSON object")
+		response.Error(w, http.StatusBadRequest, response.CodeValidationError, "Request must contain one JSON object")
 		return
 	}
 
@@ -181,19 +181,19 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		w.Header().Set("Allow", http.MethodPut)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/products/")
 	if rawID == "" || strings.Contains(rawID, "/") {
-		response.Error(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")
 		return
 	}
 
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil || id <= 0 {
-		response.Error(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")
 		return
 	}
 
@@ -209,13 +209,13 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "Invalid JSON request")
+		response.Error(w, http.StatusBadRequest, response.CodeValidationError, "Invalid JSON request")
 		return
 	}
 
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
-		response.Error(w, http.StatusBadRequest, "Request must contain one JSON object")
+		response.Error(w, http.StatusBadRequest, response.CodeValidationError, "Request must contain one JSON object")
 		return
 	}
 
@@ -223,7 +223,7 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 	// whatever its value (including 0 and null) so a stale form value can
 	// never overwrite the current quantity.
 	if req.Quantity != nil {
-		response.Error(w, http.StatusBadRequest, "quantity cannot be updated; use stock-in or stock-out")
+		response.Error(w, http.StatusBadRequest, response.CodeValidationError, "quantity cannot be updated; use stock-in or stock-out")
 		return
 	}
 
@@ -240,19 +240,19 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *ProductHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		w.Header().Set("Allow", http.MethodDelete)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/products/")
 	if rawID == "" || strings.Contains(rawID, "/") {
-		response.Error(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")
 		return
 	}
 
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil || id <= 0 {
-		response.Error(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")
 		return
 	}
 
@@ -267,7 +267,7 @@ func (h *ProductHandler) Delete(w http.ResponseWriter, r *http.Request) {
 func (h *ProductHandler) StockIn(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -275,13 +275,13 @@ func (h *ProductHandler) StockIn(w http.ResponseWriter, r *http.Request) {
 	rawID = strings.TrimSuffix(rawID, "/stock-in")
 
 	if rawID == "" || strings.Contains(rawID, "/") {
-		response.Error(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")
 		return
 	}
 
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil || id <= 0 {
-		response.Error(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")
 		return
 	}
 
@@ -297,13 +297,13 @@ func (h *ProductHandler) StockIn(w http.ResponseWriter, r *http.Request) {
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "Invalid JSON body")
+		response.Error(w, http.StatusBadRequest, response.CodeValidationError, "Invalid JSON body")
 		return
 	}
 
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
-		response.Error(w, http.StatusBadRequest, "Request must contain one JSON object")
+		response.Error(w, http.StatusBadRequest, response.CodeValidationError, "Request must contain one JSON object")
 		return
 	}
 
@@ -324,7 +324,7 @@ func (h *ProductHandler) StockIn(w http.ResponseWriter, r *http.Request) {
 func (h *ProductHandler) StockOut(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -332,13 +332,13 @@ func (h *ProductHandler) StockOut(w http.ResponseWriter, r *http.Request) {
 	rawID = strings.TrimSuffix(rawID, "/stock-out")
 
 	if rawID == "" || strings.Contains(rawID, "/") {
-		response.Error(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")
 		return
 	}
 
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil || id <= 0 {
-		response.Error(w, http.StatusBadRequest, "invalid product ID")
+		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")
 		return
 	}
 
@@ -354,13 +354,13 @@ func (h *ProductHandler) StockOut(w http.ResponseWriter, r *http.Request) {
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "Invalid JSON body")
+		response.Error(w, http.StatusBadRequest, response.CodeValidationError, "Invalid JSON body")
 		return
 	}
 
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
-		response.Error(w, http.StatusBadRequest, "Request must contain one JSON object")
+		response.Error(w, http.StatusBadRequest, response.CodeValidationError, "Request must contain one JSON object")
 		return
 	}
 

@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"gostock/internal/dto"
-	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
+	"gostock/pkg/response"
 )
 
 type UserHandler struct {
@@ -24,7 +24,7 @@ func NewUserHandler(uc *usecase.UserUseCase) *UserHandler {
 func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -35,7 +35,7 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 	if rawPage := query.Get("page"); rawPage != "" {
 		parsed, err := strconv.Atoi(rawPage)
 		if err != nil {
-			response.Error(w, http.StatusBadRequest, "invalid page")
+			response.Error(w, http.StatusBadRequest, codeInvalidPage, "invalid page")
 			return
 		}
 		page = parsed
@@ -44,7 +44,7 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 	if rawLimit := query.Get("limit"); rawLimit != "" {
 		parsed, err := strconv.Atoi(rawLimit)
 		if err != nil {
-			response.Error(w, http.StatusBadRequest, "invalid limit")
+			response.Error(w, http.StatusBadRequest, codeInvalidLimit, "invalid limit")
 			return
 		}
 		limit = parsed
@@ -62,19 +62,19 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *UserHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/users/")
 	if rawID == "" || strings.Contains(rawID, "/") {
-		response.Error(w, http.StatusBadRequest, "invalid user ID")
+		response.Error(w, http.StatusBadRequest, codeInvalidUserID, "invalid user ID")
 		return
 	}
 
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil || id <= 0 {
-		response.Error(w, http.StatusBadRequest, "invalid user ID")
+		response.Error(w, http.StatusBadRequest, codeInvalidUserID, "invalid user ID")
 		return
 	}
 
@@ -90,19 +90,19 @@ func (h *UserHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPatch {
 		w.Header().Set("Allow", http.MethodPatch)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/users/")
 	if rawID == "" || strings.Contains(rawID, "/") {
-		response.Error(w, http.StatusBadRequest, "invalid user ID")
+		response.Error(w, http.StatusBadRequest, codeInvalidUserID, "invalid user ID")
 		return
 	}
 
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil || id <= 0 {
-		response.Error(w, http.StatusBadRequest, "invalid user ID")
+		response.Error(w, http.StatusBadRequest, codeInvalidUserID, "invalid user ID")
 		return
 	}
 
@@ -116,7 +116,7 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	var req dto.UpdateUserRequest
 	if err := dec.Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "invalid request body")
+		response.Error(w, http.StatusBadRequest, response.CodeValidationError, "invalid request body")
 		return
 	}
 

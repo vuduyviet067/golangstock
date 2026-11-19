@@ -237,6 +237,4 @@ func TestAuthLogoutResponse(t *testing.T) {
 		t.Fatalf("LogoutResponse = %+v, want {Message:logged out}", got)
 	}
 	assertUserJSON(t, got, `{"message":"logged out"}`)
-	assertUserJSON(t, dto.APIResponse{Success: true, Message: "logged out", Data: got},
-		`{"success":true,"message":"logged out","data":{"message":"logged out"}}`)
 }

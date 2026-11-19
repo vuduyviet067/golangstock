@@ -28,7 +28,7 @@ import (
 const (
 	handlePackageTree     = "internal/handle"
 	handlerPackage        = "internal/handle/http"
-	responseHelperPackage = "internal/handle/http/response"
+	responseHelperPackage = "pkg/response"
 	usecasePackage        = "internal/usecase"
 
 	internalPrefix = modulePath + "/internal/"
@@ -37,14 +37,10 @@ const (
 	mapperImport   = modulePath + "/" + mapperPackage
 )
 
-// responseEnvelopeTypes are dto types that wrap a response rather than map a
-// domain value. The response helper (internal/handle/http/response) builds
-// them; they are never part of the handler-mapping rule.
-var responseEnvelopeTypes = map[string]string{
-	"APIResponse":    "the {success, message, data} envelope written by the response helper",
-	"PaginatedData":  "the {items, pagination} wrapper written by response.Paginated",
-	"PaginationMeta": "the pagination metadata written by response.Paginated",
-}
+// The response envelope types (APIResponse, PaginatedData, PaginationMeta) are
+// declared in the response helper, pkg/response, not in internal/dto, so they
+// are never part of the derived response DTO set and need no exception here.
+// response_guard_test.go keeps the helper the only writer of response bodies.
 
 // domainResultAllowlist names the public use case methods, as
 // "ReceiverType.Method", that may return domain types because their result is
@@ -185,8 +181,8 @@ func isMapperImport(p string) bool {
 
 // responseDTOTypes derives the response DTO type names from the source: the
 // dto types the mapper functions return, every dto type named *Response, and
-// the dto struct types those contain (e.g. a chart point), minus the response
-// envelope types. Request and input DTOs are never in the set.
+// the dto struct types those contain (e.g. a chart point). Request and input
+// DTOs are never in the set.
 func responseDTOTypes(fsys fs.FS) (map[string]bool, error) {
 	fset := token.NewFileSet()
 	dtoFiles, err := parseGoFiles(fsys, fset, dtoPackage, false)
@@ -270,9 +266,6 @@ func responseDTOTypes(fsys fs.FS) (map[string]bool, error) {
 				}
 			}
 		}
-	}
-	for name := range responseEnvelopeTypes {
-		delete(set, name)
 	}
 	return set, nil
 }
@@ -584,7 +577,6 @@ func TestDomainAndDTOHaveNoInternalImports(t *testing.T) {
 func TestHandlerDoesNotImportMapper(t *testing.T) {
 	fsys := moduleFS(t)
 	requireFiles(t, fsys, handlerPackage)
-	requireFiles(t, fsys, responseHelperPackage)
 	v, err := checkImports(fsys, handlePackageTree, isMapperImport, "only use cases call the mapper")
 	reportViolations(t, v, err, "Return the response DTO from the use case instead of mapping in the HTTP layer.")
 }

@@ -223,35 +223,35 @@ func TestAuthContract_Register(t *testing.T) {
 			repo:       &contractRegisterRepo{createErr: repository.ErrEmailExists},
 			body:       `{"email":"taken@example.com","password":"Password123"}`,
 			wantStatus: http.StatusConflict,
-			wantBody:   `{"success":false,"message":"email already exists","data":null}`,
+			wantBody:   `{"success":false,"code":"EMAIL_EXISTS","message":"email already exists","data":null}`,
 		},
 		{
 			name:       "invalid email",
 			repo:       &contractRegisterRepo{},
 			body:       `{"email":"not-an-email","password":"Password123"}`,
 			wantStatus: http.StatusBadRequest,
-			wantBody:   `{"success":false,"message":"invalid email","data":null}`,
+			wantBody:   `{"success":false,"code":"INVALID_EMAIL","message":"invalid email","data":null}`,
 		},
 		{
 			name:       "password too short",
 			repo:       &contractRegisterRepo{},
 			body:       `{"email":"short@example.com","password":"short"}`,
 			wantStatus: http.StatusBadRequest,
-			wantBody:   `{"success":false,"message":"invalid password","data":null}`,
+			wantBody:   `{"success":false,"code":"INVALID_PASSWORD","message":"invalid password","data":null}`,
 		},
 		{
 			name:       "unknown field",
 			repo:       &contractRegisterRepo{},
 			body:       `{"email":"a@example.com","password":"Password123","role":"admin"}`,
 			wantStatus: http.StatusBadRequest,
-			wantBody:   `{"success":false,"message":"invalid JSON request","data":null}`,
+			wantBody:   `{"success":false,"code":"VALIDATION_ERROR","message":"invalid JSON request","data":null}`,
 		},
 		{
 			name:       "trailing JSON value",
 			repo:       &contractRegisterRepo{},
 			body:       `{"email":"a@example.com","password":"Password123"}{}`,
 			wantStatus: http.StatusBadRequest,
-			wantBody:   `{"success":false,"message":"request must contain exactly one JSON object","data":null}`,
+			wantBody:   `{"success":false,"code":"VALIDATION_ERROR","message":"request must contain exactly one JSON object","data":null}`,
 		},
 	}
 
@@ -275,7 +275,7 @@ func TestAuthContract_Register(t *testing.T) {
 		rec := httptest.NewRecorder()
 		handler.Register(rec, httptest.NewRequest(http.MethodGet, "/api/v1/auth/register", nil))
 
-		contractAssertResponse(t, rec, http.StatusMethodNotAllowed, `{"success":false,"message":"method not allowed","data":null}`)
+		contractAssertResponse(t, rec, http.StatusMethodNotAllowed, `{"success":false,"code":"METHOD_NOT_ALLOWED","message":"method not allowed","data":null}`)
 		if got := rec.Header().Get("Allow"); got != http.MethodPost {
 			t.Errorf("Allow = %q, want POST", got)
 		}
@@ -287,7 +287,7 @@ func TestAuthContract_Register(t *testing.T) {
 		rec := httptest.NewRecorder()
 		handler.Register(rec, req)
 
-		contractAssertResponse(t, rec, http.StatusUnsupportedMediaType, `{"success":false,"message":"Content-Type must be application/json","data":null}`)
+		contractAssertResponse(t, rec, http.StatusUnsupportedMediaType, `{"success":false,"code":"UNSUPPORTED_MEDIA_TYPE","message":"Content-Type must be application/json","data":null}`)
 	})
 }
 
@@ -353,25 +353,25 @@ func TestAuthContract_Login(t *testing.T) {
 			user:       &domain.User{ID: 7, Email: "admin@example.com", PasswordHash: hash, Role: "admin"},
 			body:       `{"email":"admin@example.com","password":"WrongPassword"}`,
 			wantStatus: http.StatusUnauthorized,
-			wantBody:   `{"success":false,"message":"invalid email or password","data":null}`,
+			wantBody:   `{"success":false,"code":"INVALID_CREDENTIALS","message":"invalid email or password","data":null}`,
 		},
 		{
 			name:       "unknown email",
 			body:       `{"email":"nobody@example.com","password":"Password123"}`,
 			wantStatus: http.StatusUnauthorized,
-			wantBody:   `{"success":false,"message":"invalid email or password","data":null}`,
+			wantBody:   `{"success":false,"code":"INVALID_CREDENTIALS","message":"invalid email or password","data":null}`,
 		},
 		{
 			name:       "malformed email is reported as invalid credentials",
 			body:       `{"email":"nobody","password":"Password123"}`,
 			wantStatus: http.StatusUnauthorized,
-			wantBody:   `{"success":false,"message":"invalid email or password","data":null}`,
+			wantBody:   `{"success":false,"code":"INVALID_CREDENTIALS","message":"invalid email or password","data":null}`,
 		},
 		{
 			name:       "invalid JSON",
 			body:       `{"email":`,
 			wantStatus: http.StatusBadRequest,
-			wantBody:   `{"success":false,"message":"invalid JSON request","data":null}`,
+			wantBody:   `{"success":false,"code":"VALIDATION_ERROR","message":"invalid JSON request","data":null}`,
 		},
 	}
 	for _, tc := range errorCases {
@@ -437,7 +437,7 @@ func TestAuthContract_Refresh(t *testing.T) {
 		rec := httptest.NewRecorder()
 		handler.Refresh(rec, refreshRequest(""))
 
-		contractAssertResponse(t, rec, http.StatusUnauthorized, `{"success":false,"message":"refresh token required","data":null}`)
+		contractAssertResponse(t, rec, http.StatusUnauthorized, `{"success":false,"code":"UNAUTHENTICATED","message":"refresh token required","data":null}`)
 		contractAssertNoCookies(t, rec)
 	})
 
@@ -449,12 +449,12 @@ func TestAuthContract_Refresh(t *testing.T) {
 		{
 			name:     "unknown token",
 			repo:     &mockRefreshRepo{},
-			wantBody: `{"success":false,"message":"invalid or expired session","data":null}`,
+			wantBody: `{"success":false,"code":"INVALID_SESSION","message":"invalid or expired session","data":null}`,
 		},
 		{
 			name:     "expired token",
 			repo:     &mockRefreshRepo{token: &domain.RefreshToken{ID: 1, UserID: 9, ExpiresAt: time.Now().Add(-time.Hour)}},
-			wantBody: `{"success":false,"message":"invalid or expired refresh token","data":null}`,
+			wantBody: `{"success":false,"code":"INVALID_REFRESH_TOKEN","message":"invalid or expired refresh token","data":null}`,
 		},
 	}
 	for _, tc := range clearing {
@@ -473,7 +473,7 @@ func TestAuthContract_Refresh(t *testing.T) {
 		rec := httptest.NewRecorder()
 		handler.Refresh(rec, refreshRequest("some-refresh-token"))
 
-		contractAssertResponse(t, rec, http.StatusInternalServerError, `{"success":false,"message":"Internal server error","data":null}`)
+		contractAssertResponse(t, rec, http.StatusInternalServerError, `{"success":false,"code":"INTERNAL_ERROR","message":"Internal server error","data":null}`)
 		contractAssertNoCookies(t, rec)
 	})
 }
@@ -527,7 +527,7 @@ func TestAuthContract_Me(t *testing.T) {
 		rec := httptest.NewRecorder()
 		handler.Me(rec, meRequest(nil))
 
-		contractAssertResponse(t, rec, http.StatusUnauthorized, `{"success":false,"message":"authentication required","data":null}`)
+		contractAssertResponse(t, rec, http.StatusUnauthorized, `{"success":false,"code":"UNAUTHENTICATED","message":"authentication required","data":null}`)
 	})
 
 	// Through the real middleware the user is rebuilt from the JWT claims only,
@@ -544,8 +544,8 @@ func TestAuthContract_Me(t *testing.T) {
 		}{
 			{"valid token", "Bearer valid-token", http.StatusOK,
 				`{"success":true,"message":"User profile retrieved successfully","data":{"id":1,"email":"test@example.com","role":"user","created_at":""}}`},
-			{"no token", "", http.StatusUnauthorized, `{"success":false,"message":"authentication required","data":null}`},
-			{"invalid token", "Bearer nope", http.StatusUnauthorized, `{"success":false,"message":"invalid or expired token","data":null}`},
+			{"no token", "", http.StatusUnauthorized, `{"success":false,"code":"UNAUTHENTICATED","message":"authentication required","data":null}`},
+			{"invalid token", "Bearer nope", http.StatusUnauthorized, `{"success":false,"code":"UNAUTHENTICATED","message":"invalid or expired token","data":null}`},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
@@ -579,7 +579,7 @@ func TestAuthContract_Logout(t *testing.T) {
 		{"without cookie", &mockRefreshRepo{}, "", http.StatusOK, wantOK},
 		{"already revoked token", &mockRefreshRepo{revokeErr: repository.ErrRefreshTokenRevoked}, "revoked-token", http.StatusOK, wantOK},
 		{"infrastructure error", &mockRefreshRepo{revokeErr: errors.New("db down")}, "active-token", http.StatusInternalServerError,
-			`{"success":false,"message":"Internal server error","data":null}`},
+			`{"success":false,"code":"INTERNAL_ERROR","message":"Internal server error","data":null}`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -601,7 +601,7 @@ func TestAuthContract_Logout(t *testing.T) {
 		rec := httptest.NewRecorder()
 		handler.Logout(rec, httptest.NewRequest(http.MethodGet, "/api/v1/auth/logout", nil))
 
-		contractAssertResponse(t, rec, http.StatusMethodNotAllowed, `{"success":false,"message":"method not allowed","data":null}`)
+		contractAssertResponse(t, rec, http.StatusMethodNotAllowed, `{"success":false,"code":"METHOD_NOT_ALLOWED","message":"method not allowed","data":null}`)
 		contractAssertNoCookies(t, rec)
 	})
 }
@@ -663,13 +663,13 @@ func TestUserContract_List(t *testing.T) {
 			wantBody:   `{"success":true,"message":"Users retrieved successfully","data":{"items":[],"pagination":{"page":1,"limit":100,"total":0,"total_pages":0}}}`,
 		},
 		{name: "non-numeric page", path: "/api/v1/users?page=abc", wantStatus: http.StatusBadRequest,
-			wantBody: `{"success":false,"message":"invalid page","data":null}`},
+			wantBody: `{"success":false,"code":"INVALID_PAGE","message":"invalid page","data":null}`},
 		{name: "page below 1", path: "/api/v1/users?page=0", wantStatus: http.StatusBadRequest,
-			wantBody: `{"success":false,"message":"invalid page","data":null}`},
+			wantBody: `{"success":false,"code":"INVALID_PAGE","message":"invalid page","data":null}`},
 		{name: "non-numeric limit", path: "/api/v1/users?limit=abc", wantStatus: http.StatusBadRequest,
-			wantBody: `{"success":false,"message":"invalid limit","data":null}`},
+			wantBody: `{"success":false,"code":"INVALID_LIMIT","message":"invalid limit","data":null}`},
 		{name: "limit above 100", path: "/api/v1/users?limit=101", wantStatus: http.StatusBadRequest,
-			wantBody: `{"success":false,"message":"invalid limit","data":null}`},
+			wantBody: `{"success":false,"code":"INVALID_LIMIT","message":"invalid limit","data":null}`},
 	}
 
 	for _, tc := range tests {
@@ -706,7 +706,7 @@ func TestUserContract_List(t *testing.T) {
 		rec := httptest.NewRecorder()
 		setupUserHandler(repo).List(rec, httptest.NewRequest(http.MethodGet, "/api/v1/users", nil))
 
-		contractAssertResponse(t, rec, http.StatusInternalServerError, `{"success":false,"message":"Internal server error","data":null}`)
+		contractAssertResponse(t, rec, http.StatusInternalServerError, `{"success":false,"code":"INTERNAL_ERROR","message":"Internal server error","data":null}`)
 	})
 }
 
@@ -740,13 +740,13 @@ func TestUserContract_GetByID(t *testing.T) {
 			wantBody:   `{"success":true,"message":"User retrieved successfully","data":{"id":43,"email":"zero@example.com","role":"admin","created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"}}`,
 		},
 		{name: "not found", path: "/api/v1/users/999", wantStatus: http.StatusNotFound,
-			wantBody: `{"success":false,"message":"user not found","data":null}`},
+			wantBody: `{"success":false,"code":"USER_NOT_FOUND","message":"user not found","data":null}`},
 		{name: "non-numeric id", path: "/api/v1/users/abc", wantStatus: http.StatusBadRequest,
-			wantBody: `{"success":false,"message":"invalid user ID","data":null}`},
+			wantBody: `{"success":false,"code":"INVALID_USER_ID","message":"invalid user ID","data":null}`},
 		{name: "zero id", path: "/api/v1/users/0", wantStatus: http.StatusBadRequest,
-			wantBody: `{"success":false,"message":"invalid user ID","data":null}`},
+			wantBody: `{"success":false,"code":"INVALID_USER_ID","message":"invalid user ID","data":null}`},
 		{name: "nested path", path: "/api/v1/users/1/extra", wantStatus: http.StatusBadRequest,
-			wantBody: `{"success":false,"message":"invalid user ID","data":null}`},
+			wantBody: `{"success":false,"code":"INVALID_USER_ID","message":"invalid user ID","data":null}`},
 	}
 
 	for _, tc := range tests {
@@ -802,17 +802,17 @@ func TestUserContract_Update(t *testing.T) {
 			wantBody:   `{"success":true,"message":"User updated successfully","data":{"id":10,"email":"existing@example.com","role":"admin","created_at":"2026-03-04T12:06:07.891234567+07:00","updated_at":"2026-03-05T06:07:08.12Z"}}`,
 		},
 		{name: "empty payload", body: `{}`, wantStatus: http.StatusBadRequest,
-			wantBody: `{"success":false,"message":"at least one field must be provided for update","data":null}`},
+			wantBody: `{"success":false,"code":"EMPTY_UPDATE","message":"at least one field must be provided for update","data":null}`},
 		{name: "unknown field", body: `{"password":"x"}`, wantStatus: http.StatusBadRequest,
-			wantBody: `{"success":false,"message":"invalid request body","data":null}`},
+			wantBody: `{"success":false,"code":"VALIDATION_ERROR","message":"invalid request body","data":null}`},
 		{name: "invalid email", body: `{"email":"bad"}`, wantStatus: http.StatusBadRequest,
-			wantBody: `{"success":false,"message":"invalid email","data":null}`},
+			wantBody: `{"success":false,"code":"INVALID_EMAIL","message":"invalid email","data":null}`},
 		{name: "invalid role", body: `{"role":"superadmin"}`, wantStatus: http.StatusBadRequest,
-			wantBody: `{"success":false,"message":"invalid user role","data":null}`},
+			wantBody: `{"success":false,"code":"INVALID_USER_ROLE","message":"invalid user role","data":null}`},
 		{name: "duplicate email", body: `{"email":"taken@example.com"}`, updateErr: repository.ErrEmailExists,
-			wantStatus: http.StatusConflict, wantBody: `{"success":false,"message":"email already exists","data":null}`},
+			wantStatus: http.StatusConflict, wantBody: `{"success":false,"code":"EMAIL_EXISTS","message":"email already exists","data":null}`},
 		{name: "missing user", body: `{"role":"admin"}`, missing: true,
-			wantStatus: http.StatusNotFound, wantBody: `{"success":false,"message":"user not found","data":null}`},
+			wantStatus: http.StatusNotFound, wantBody: `{"success":false,"code":"USER_NOT_FOUND","message":"user not found","data":null}`},
 	}
 
 	for _, tc := range tests {
@@ -847,7 +847,7 @@ func TestUserContract_Update(t *testing.T) {
 		rec := httptest.NewRecorder()
 		setupUserHandler(&mockUserRepoForHandler{}).Update(rec, contractJSONRequest(http.MethodPatch, "/api/v1/users/abc", `{"role":"admin"}`))
 
-		contractAssertResponse(t, rec, http.StatusBadRequest, `{"success":false,"message":"invalid user ID","data":null}`)
+		contractAssertResponse(t, rec, http.StatusBadRequest, `{"success":false,"code":"INVALID_USER_ID","message":"invalid user ID","data":null}`)
 	})
 
 	t.Run("missing content type", func(t *testing.T) {
@@ -855,6 +855,6 @@ func TestUserContract_Update(t *testing.T) {
 		rec := httptest.NewRecorder()
 		setupUserHandler(&mockUserRepoForHandler{}).Update(rec, req)
 
-		contractAssertResponse(t, rec, http.StatusUnsupportedMediaType, `{"success":false,"message":"Content-Type must be application/json","data":null}`)
+		contractAssertResponse(t, rec, http.StatusUnsupportedMediaType, `{"success":false,"code":"UNSUPPORTED_MEDIA_TYPE","message":"Content-Type must be application/json","data":null}`)
 	})
 }

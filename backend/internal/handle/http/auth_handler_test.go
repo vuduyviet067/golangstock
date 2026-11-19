@@ -15,6 +15,7 @@ import (
 	"gostock/internal/dto"
 	"gostock/internal/repository"
 	"gostock/internal/usecase"
+	"gostock/pkg/response"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -207,7 +208,7 @@ func TestAuthHandler_LoginSuccessAndCookies(t *testing.T) {
 	}
 
 	// Verify response body envelope (must NOT contain tokens)
-	var resp dto.APIResponse
+	var resp response.APIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode JSON response: %v", err)
 	}
@@ -470,7 +471,7 @@ func TestAuthHandler_RefreshDatabaseError(t *testing.T) {
 	}
 
 	// Envelope must be unified error response without leaking internal sql/db messages
-	var resp dto.APIResponse
+	var resp response.APIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode JSON response error: %v", err)
 	}
@@ -609,7 +610,7 @@ func TestAuthHandler_LogoutDatabaseError(t *testing.T) {
 	}
 
 	// Ensure error response envelope without internal details
-	var resp dto.APIResponse
+	var resp response.APIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode JSON response error: %v", err)
 	}
@@ -648,7 +649,7 @@ func TestAuthHandler_Me(t *testing.T) {
 			t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 		}
 
-		var resp dto.APIResponse
+		var resp response.APIResponse
 		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 		data := resp.Data.(map[string]any)
 		if data["email"] != "viet@example.com" {
@@ -748,7 +749,7 @@ func TestAuthHandler_Logout(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d for %s", rec.Code, http.StatusOK, tc.name)
 			}
-			var resp dto.APIResponse
+			var resp response.APIResponse
 			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 				t.Fatalf("failed to decode response: %v", err)
 			}
@@ -778,7 +779,7 @@ func TestAuthHandler_Logout(t *testing.T) {
 		if rec.Code != http.StatusInternalServerError {
 			t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
 		}
-		var resp dto.APIResponse
+		var resp response.APIResponse
 		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("failed to decode response: %v", err)
 		}

@@ -17,6 +17,7 @@ import (
 	"gostock/internal/repository/postgres"
 	"gostock/internal/testdb"
 	"gostock/internal/usecase"
+	"gostock/pkg/response"
 )
 
 // tokenAuthenticator maps fixed tokens to real users of the test database, so
@@ -37,7 +38,7 @@ type historyPage struct {
 	Message string `json:"message"`
 	Data    struct {
 		Items      []dto.StockMovementResponse `json:"items"`
-		Pagination dto.PaginationMeta          `json:"pagination"`
+		Pagination response.PaginationMeta     `json:"pagination"`
 	} `json:"data"`
 }
 

@@ -11,9 +11,8 @@ import (
 	"time"
 
 	"gostock/internal/domain"
-	"gostock/internal/dto"
-	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
+	"gostock/pkg/response"
 )
 
 func TestEnforceJSONContentType(t *testing.T) {
@@ -76,7 +75,7 @@ func TestEnforceJSONContentType(t *testing.T) {
 			t.Fatalf("expected 415 Unsupported Media Type, got %d", rec.Code)
 		}
 
-		var resp dto.APIResponse
+		var resp response.APIResponse
 		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("failed to decode JSON response: %v", err)
 		}

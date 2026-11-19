@@ -19,8 +19,8 @@ func TestDashboardRoutes_ExactBodies(t *testing.T) {
 		summary = "/api/v1/dashboard/summary"
 		chart   = "/api/v1/dashboard/stock-movements"
 
-		unauthenticated = `{"success":false,"message":"authentication required","data":null}`
-		forbidden       = `{"success":false,"message":"forbidden: admin role required","data":null}`
+		unauthenticated = `{"success":false,"code":"UNAUTHENTICATED","message":"authentication required","data":null}`
+		forbidden       = `{"success":false,"code":"FORBIDDEN","message":"forbidden: admin role required","data":null}`
 	)
 
 	tests := []struct {
@@ -41,11 +41,11 @@ func TestDashboardRoutes_ExactBodies(t *testing.T) {
 		{"user chart with invalid tz", chart + "?tz=Mars/Base", "user-token", http.StatusForbidden, forbidden},
 
 		{"admin chart with invalid from", chart + "?from=11/01/2026", "admin-token", http.StatusBadRequest,
-			`{"success":false,"message":"invalid query parameters","data":{"fields":{"from":"must be a date in YYYY-MM-DD format"}}}`},
+			`{"success":false,"code":"VALIDATION_ERROR","message":"invalid query parameters","data":{"fields":{"from":"must be a date in YYYY-MM-DD format"}}}`},
 		{"admin chart with invalid granularity", chart + "?granularity=week", "admin-token", http.StatusBadRequest,
-			`{"success":false,"message":"invalid query parameters","data":{"fields":{"granularity":"must be auto, day or month"}}}`},
+			`{"success":false,"code":"VALIDATION_ERROR","message":"invalid query parameters","data":{"fields":{"granularity":"must be auto, day or month"}}}`},
 		{"admin chart with invalid tz", chart + "?tz=Mars/Base", "admin-token", http.StatusBadRequest,
-			`{"success":false,"message":"invalid query parameters","data":{"fields":{"tz":"must be an IANA time zone name"}}}`},
+			`{"success":false,"code":"VALIDATION_ERROR","message":"invalid query parameters","data":{"fields":{"tz":"must be an IANA time zone name"}}}`},
 
 		{"admin summary", summary, "admin-token", http.StatusOK,
 			`{"success":true,"message":"Dashboard summary retrieved successfully","data":{` +

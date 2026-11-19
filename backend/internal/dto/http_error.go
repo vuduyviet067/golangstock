@@ -2,9 +2,12 @@ package dto
 
 type HTTPError struct {
 	StatusCode int
-	Message    string
-	Fields     map[string]string
-	Cause      error
+	// Code is the UPPER_SNAKE error code written in the response body. An
+	// empty Code is replaced by the general code of StatusCode.
+	Code    string
+	Message string
+	Fields  map[string]string
+	Cause   error
 }
 
 func (e *HTTPError) Error() string {

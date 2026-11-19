@@ -22,9 +22,9 @@ func TestUserRoutes_ExactBodies(t *testing.T) {
 		users = "/api/v1/users"
 		user1 = "/api/v1/users/1"
 
-		unauthenticated = `{"success":false,"message":"authentication required","data":null}`
-		invalidToken    = `{"success":false,"message":"invalid or expired token","data":null}`
-		forbidden       = `{"success":false,"message":"forbidden: admin role required","data":null}`
+		unauthenticated = `{"success":false,"code":"UNAUTHENTICATED","message":"authentication required","data":null}`
+		invalidToken    = `{"success":false,"code":"UNAUTHENTICATED","message":"invalid or expired token","data":null}`
+		forbidden       = `{"success":false,"code":"FORBIDDEN","message":"forbidden: admin role required","data":null}`
 	)
 
 	tests := []struct {
@@ -53,23 +53,23 @@ func TestUserRoutes_ExactBodies(t *testing.T) {
 		{"admin list with paging", http.MethodGet, users + "?page=3&limit=25&q=x", "", "admin-token", http.StatusOK,
 			`{"success":true,"message":"Users retrieved successfully","data":{"items":[],"pagination":{"page":3,"limit":25,"total":0,"total_pages":0}}}`},
 		{"admin list invalid page", http.MethodGet, users + "?page=0", "", "admin-token", http.StatusBadRequest,
-			`{"success":false,"message":"invalid page","data":null}`},
+			`{"success":false,"code":"INVALID_PAGE","message":"invalid page","data":null}`},
 		{"admin list invalid limit", http.MethodGet, users + "?limit=101", "", "admin-token", http.StatusBadRequest,
-			`{"success":false,"message":"invalid limit","data":null}`},
+			`{"success":false,"code":"INVALID_LIMIT","message":"invalid limit","data":null}`},
 		{"admin get", http.MethodGet, user1, "", "admin-token", http.StatusOK,
 			`{"success":true,"message":"User retrieved successfully","data":{"id":1,"email":"target@example.com","role":"user","created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"}}`},
 		{"admin get missing", http.MethodGet, "/api/v1/users/2", "", "admin-token", http.StatusNotFound,
-			`{"success":false,"message":"user not found","data":null}`},
+			`{"success":false,"code":"USER_NOT_FOUND","message":"user not found","data":null}`},
 		{"admin get invalid id", http.MethodGet, "/api/v1/users/abc", "", "admin-token", http.StatusBadRequest,
-			`{"success":false,"message":"invalid user ID","data":null}`},
+			`{"success":false,"code":"INVALID_USER_ID","message":"invalid user ID","data":null}`},
 		{"admin update role", http.MethodPatch, user1, `{"role":"admin"}`, "admin-token", http.StatusOK,
 			`{"success":true,"message":"User updated successfully","data":{"id":1,"email":"target@example.com","role":"admin","created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"}}`},
 		{"admin update invalid role", http.MethodPatch, user1, `{"role":"superadmin"}`, "admin-token", http.StatusBadRequest,
-			`{"success":false,"message":"invalid user role","data":null}`},
+			`{"success":false,"code":"INVALID_USER_ROLE","message":"invalid user role","data":null}`},
 		{"admin update unknown field", http.MethodPatch, user1, `{"password":"x"}`, "admin-token", http.StatusBadRequest,
-			`{"success":false,"message":"invalid request body","data":null}`},
+			`{"success":false,"code":"VALIDATION_ERROR","message":"invalid request body","data":null}`},
 		{"admin update missing", http.MethodPatch, "/api/v1/users/2", `{"role":"admin"}`, "admin-token", http.StatusNotFound,
-			`{"success":false,"message":"user not found","data":null}`},
+			`{"success":false,"code":"USER_NOT_FOUND","message":"user not found","data":null}`},
 	}
 
 	for _, tt := range tests {

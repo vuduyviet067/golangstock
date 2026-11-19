@@ -20,7 +20,7 @@ import (
 
 const (
 	readyBody    = `{"success":true,"message":"service is ready","data":{"database":"connected","status":"ready"}}`
-	notReadyBody = `{"success":false,"message":"database disconnected","data":null}`
+	notReadyBody = `{"success":false,"code":"SERVICE_UNAVAILABLE","message":"database disconnected","data":null}`
 )
 
 // newPingDB returns a database whose next Ping succeeds (pingErr nil) or fails
@@ -211,7 +211,7 @@ func TestReadinessHandler_RejectsOtherMethods(t *testing.T) {
 			}
 			if method != http.MethodHead {
 				contractAssertResponse(t, rec, http.StatusMethodNotAllowed,
-					`{"success":false,"message":"method not allowed","data":null}`)
+					`{"success":false,"code":"METHOD_NOT_ALLOWED","message":"method not allowed","data":null}`)
 			}
 			if err := mock.ExpectationsWereMet(); err != nil {
 				t.Errorf("unexpected database activity: %v", err)
