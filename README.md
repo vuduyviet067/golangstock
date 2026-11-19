@@ -47,7 +47,7 @@ The project provides product and inventory management, user authentication, role
 - Retrieve user details.
 - Update user information and roles.
 - Restrict user-management operations to administrators.
-- Provide a CLI command to create the first administrator.
+- Provide a server-side `gostock admin` command to create an administrator or reset an administrator's password.
 
 ### Application and security configuration
 
@@ -99,9 +99,6 @@ The dependency direction keeps business logic independent of HTTP and PostgreSQL
 ```text
 gostock/
 ├── backend/
-│   ├── cmd/
-│   │   └── createadmin/
-│   │       └── main.go
 │   ├── config/
 │   │   ├── config.go
 │   │   ├── config_test.go
@@ -340,25 +337,46 @@ Only drop the table manually when using a disposable database and after verifyin
 
 ### 5. Create the first administrator
 
-Newly registered accounts receive the `user` role.
+Newly registered accounts receive the `user` role. Administrators are created, and their passwords reset, with the `admin` command of the backend binary. It runs on the server only; there is no HTTP API for it.
 
-Create the first administrator from the `backend` directory:
-
-```bash
-go run ./cmd/createadmin
+```text
+gostock admin create --email <email>           # create an admin account
+gostock admin reset-password --email <email>   # set a new password for an admin account and revoke its sessions
+gostock admin --help                           # usage
 ```
 
-The command requires `DATABASE_URL` and an initialized database.
+From the `backend` directory with the Go toolchain:
 
-It interactively prompts for:
+```bash
+go run . admin create --email admin@example.com
+```
 
-- Email address.
-- Password.
-- Password confirmation.
+With a built binary (`go build -o gostock .`), or inside the container that runs it (replace `<container>` and the binary path with those of your deployment):
 
-The password is not echoed in the terminal. Passwords must be between 8 and 72 bytes.
+```bash
+./gostock admin reset-password --email admin@example.com
+docker exec -it <container> /path/to/gostock admin reset-password --email admin@example.com
+```
 
-The command fails if the email address is already registered.
+The command requires `DATABASE_URL` and an initialized database. When `EXPECTED_DATABASE_NAME` is set, it checks `current_database()` like the server and stops before asking for the password if it is connected to another database.
+
+**The password is read from standard input only.** It is never accepted as a command-line argument or an environment variable: a password there would end up in the shell history, the process list or the container configuration. The command rejects any extra argument.
+
+- In a terminal (`docker exec -it`), it asks for the password twice without echo; both entries must match.
+- Without a terminal, it reads the first line of standard input and drops its line ending (`\n` or `\r\n`). Pipe it from a secret store or a protected file, never from `echo` with the password typed on the command line:
+
+```bash
+go run . admin create --email admin@example.com < /run/secrets/gostock_admin_password
+docker exec -i <container> /path/to/gostock admin create --email admin@example.com < admin-password.txt
+```
+
+Passwords must be between 8 and 72 bytes. The command prints only the email address on success, never the password or its hash.
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Success (or `--help`) |
+| `1` | The command failed: invalid email or password, email already registered, account not found, account not an admin, passwords not matching, empty password, database or preflight error |
+| `2` | Invalid command line: unknown subcommand, missing `--email`, unknown flag or extra argument |
 
 ### 6. Start the API
 
@@ -379,7 +397,7 @@ The application initializes its dependencies, connects to PostgreSQL, starts the
 | Variable | Required | Description |
 |---|---|---|
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `EXPECTED_DATABASE_NAME` | No | When set, the API server, `createadmin` and `resetadmin` check `current_database()` on their own connection right after connecting and stop if it differs, before serving requests or asking for credentials. If set, it must not be empty or have leading or trailing whitespace |
+| `EXPECTED_DATABASE_NAME` | No | When set, the API server and the `gostock admin` command check `current_database()` on their own connection right after connecting and stop if it differs, before serving requests or asking for credentials. If set, it must not be empty or have leading or trailing whitespace |
 | `APP_ENV` | No | Application environment; defaults to `development` |
 | `ENV` | No | Fallback environment variable when `APP_ENV` is unset |
 | `HTTP_PORT` | No | HTTP port; defaults to `8080` |
@@ -634,7 +652,7 @@ Manual UI testing uses a separate database, `gostock_ui_test`. It is never the d
 DATABASE_URL="${GOSTOCK_UI_DATABASE_URL:?not set}" EXPECTED_DATABASE_NAME=gostock_ui_test go run .
 ```
 
-On success the server logs `database preflight passed` with the database name. On any other database it exits with `database preflight: connected to "…", expected "gostock_ui_test"` before opening its HTTP port. Use the same two variables for `go run ./cmd/createadmin` and `go run ./cmd/resetadmin`.
+On success the server logs `database preflight passed` with the database name. On any other database it exits with `database preflight: connected to "…", expected "gostock_ui_test"` before opening its HTTP port. Use the same two variables for `go run . admin create` and `go run . admin reset-password`.
 
 ## Current Scope and Future Improvements
 

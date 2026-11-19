@@ -48,7 +48,7 @@ const (
 var domainResultAllowlist = map[string]string{
 	"AuthUseCase.Authenticate": "returns the authenticated principal that AuthMiddleware stores in the request context " +
 		"for authorization (RequireRole, currentActorID, Me); it is never serialized as is",
-	"AdminUseCase.CreateAdmin": "has no production caller since the admin CLIs were removed; no HTTP handler returns its result",
+	"AdminUseCase.CreateAdmin": "called only by the server-side admin command (internal/app, `gostock admin create`), which prints the email; no HTTP handler returns its result",
 }
 
 // goFile is one parsed production source file.
