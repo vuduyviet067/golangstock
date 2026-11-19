@@ -77,7 +77,7 @@ func (r *contractRegisterRepo) Create(ctx context.Context, u *domain.User) error
 }
 
 func contractJSONRequest(method, path, body string) *http.Request {
-	req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
+	req := newRequest(method, path, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	return req
 }
@@ -273,7 +273,7 @@ func TestAuthContract_Register(t *testing.T) {
 	t.Run("wrong method", func(t *testing.T) {
 		handler := setupTestAuthHandler(&mockUserRepo{}, &mockRefreshRepo{})
 		rec := httptest.NewRecorder()
-		handler.Register(rec, httptest.NewRequest(http.MethodGet, "/api/v1/auth/register", nil))
+		serveRoute(rec, newRequest(http.MethodGet, "/api/v1/auth/register", nil), http.MethodPost, "/api/v1/auth/register", handler.Register)
 
 		contractAssertResponse(t, rec, http.StatusMethodNotAllowed, `{"success":false,"code":"METHOD_NOT_ALLOWED","message":"method not allowed","data":null}`)
 		if got := rec.Header().Get("Allow"); got != http.MethodPost {
@@ -283,7 +283,7 @@ func TestAuthContract_Register(t *testing.T) {
 
 	t.Run("missing content type", func(t *testing.T) {
 		handler := setupTestAuthHandler(&mockUserRepo{}, &mockRefreshRepo{})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{}`))
+		req := newRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{}`))
 		rec := httptest.NewRecorder()
 		handler.Register(rec, req)
 
@@ -392,7 +392,7 @@ func TestAuthContract_Login(t *testing.T) {
 
 func TestAuthContract_Refresh(t *testing.T) {
 	refreshRequest := func(cookieValue string) *http.Request {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
+		req := newRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
 		if cookieValue != "" {
 			req.AddCookie(&http.Cookie{Name: RefreshTokenCookieName, Value: cookieValue})
 		}
@@ -484,7 +484,7 @@ func TestAuthContract_Refresh(t *testing.T) {
 
 func TestAuthContract_Me(t *testing.T) {
 	meRequest := func(user *domain.User) *http.Request {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+		req := newRequest(http.MethodGet, "/api/v1/auth/me", nil)
 		if user != nil {
 			req = req.WithContext(context.WithValue(req.Context(), authenticatedUserKey, user))
 		}
@@ -548,7 +548,7 @@ func TestAuthContract_Me(t *testing.T) {
 			{"invalid token", "Bearer nope", http.StatusUnauthorized, `{"success":false,"code":"UNAUTHENTICATED","message":"invalid or expired token","data":null}`},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+				req := newRequest(http.MethodGet, "/api/v1/auth/me", nil)
 				if tc.header != "" {
 					req.Header.Set("Authorization", tc.header)
 				}
@@ -584,7 +584,7 @@ func TestAuthContract_Logout(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			handler := setupTestAuthHandler(&mockUserRepo{}, tc.repo)
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+			req := newRequest(http.MethodPost, "/api/v1/auth/logout", nil)
 			if tc.cookie != "" {
 				req.AddCookie(&http.Cookie{Name: RefreshTokenCookieName, Value: tc.cookie})
 			}
@@ -599,7 +599,7 @@ func TestAuthContract_Logout(t *testing.T) {
 	t.Run("wrong method", func(t *testing.T) {
 		handler := setupTestAuthHandler(&mockUserRepo{}, &mockRefreshRepo{})
 		rec := httptest.NewRecorder()
-		handler.Logout(rec, httptest.NewRequest(http.MethodGet, "/api/v1/auth/logout", nil))
+		serveRoute(rec, newRequest(http.MethodGet, "/api/v1/auth/logout", nil), http.MethodPost, "/api/v1/auth/logout", handler.Logout)
 
 		contractAssertResponse(t, rec, http.StatusMethodNotAllowed, `{"success":false,"code":"METHOD_NOT_ALLOWED","message":"method not allowed","data":null}`)
 		contractAssertNoCookies(t, rec)
@@ -685,7 +685,7 @@ func TestUserContract_List(t *testing.T) {
 				},
 			}
 			rec := httptest.NewRecorder()
-			setupUserHandler(repo).List(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			setupUserHandler(repo).List(rec, newRequest(http.MethodGet, tc.path, nil))
 
 			contractAssertResponse(t, rec, tc.wantStatus, tc.wantBody)
 			if tc.wantStatus == http.StatusOK {
@@ -704,7 +704,7 @@ func TestUserContract_List(t *testing.T) {
 			},
 		}
 		rec := httptest.NewRecorder()
-		setupUserHandler(repo).List(rec, httptest.NewRequest(http.MethodGet, "/api/v1/users", nil))
+		setupUserHandler(repo).List(rec, newRequest(http.MethodGet, "/api/v1/users", nil))
 
 		contractAssertResponse(t, rec, http.StatusInternalServerError, `{"success":false,"code":"INTERNAL_ERROR","message":"Internal server error","data":null}`)
 	})
@@ -761,7 +761,7 @@ func TestUserContract_GetByID(t *testing.T) {
 				},
 			}
 			rec := httptest.NewRecorder()
-			setupUserHandler(repo).GetByID(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			setupUserHandler(repo).GetByID(rec, newRequest(http.MethodGet, tc.path, nil))
 
 			contractAssertResponse(t, rec, tc.wantStatus, tc.wantBody)
 			if tc.wantStatus == http.StatusOK {
@@ -851,7 +851,7 @@ func TestUserContract_Update(t *testing.T) {
 	})
 
 	t.Run("missing content type", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/10", strings.NewReader(`{"role":"admin"}`))
+		req := newRequest(http.MethodPatch, "/api/v1/users/10", strings.NewReader(`{"role":"admin"}`))
 		rec := httptest.NewRecorder()
 		setupUserHandler(&mockUserRepoForHandler{}).Update(rec, req)
 

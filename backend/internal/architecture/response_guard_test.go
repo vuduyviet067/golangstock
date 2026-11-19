@@ -49,6 +49,17 @@ func inTree(dir, root string) bool {
 // outside the allowed trees and outside pkg/response itself, that imports
 // pkg/response or a package below it.
 func checkResponseHelperImporters(fsys fs.FS, allowed []string) ([]string, error) {
+	return checkRestrictedImport(fsys,
+		func(ip string) bool { return inTree(ip, responseHelperImport) },
+		append([]string{responseHelperPackage}, allowed...),
+		"only "+strings.Join(allowed, " and ")+" write HTTP responses")
+}
+
+// checkRestrictedImport reports every production file of the module, outside
+// the allowed directory trees, that imports a package for which restricted
+// returns true. Hidden, underscore, testdata, vendor and node_modules
+// directories are skipped, like the go tool does.
+func checkRestrictedImport(fsys fs.FS, restricted func(importPath string) bool, allowed []string, rule string) ([]string, error) {
 	fset := token.NewFileSet()
 	var violations []string
 	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
@@ -67,9 +78,6 @@ func checkResponseHelperImporters(fsys fs.FS, allowed []string) ([]string, error
 			return nil
 		}
 		dir := path.Dir(p)
-		if inTree(dir, responseHelperPackage) {
-			return nil
-		}
 		for _, root := range allowed {
 			if inTree(dir, root) {
 				return nil
@@ -88,10 +96,9 @@ func checkResponseHelperImporters(fsys fs.FS, allowed []string) ([]string, error
 			if err != nil {
 				return fmt.Errorf("%s: bad import %s", p, imp.Path.Value)
 			}
-			if inTree(ip, responseHelperImport) {
-				violations = append(violations, fmt.Sprintf(
-					"%s: imports %q; only %s write HTTP responses",
-					fset.Position(imp.Pos()), ip, strings.Join(allowed, " and ")))
+			if restricted(ip) {
+				violations = append(violations, fmt.Sprintf("%s: imports %q; %s",
+					fset.Position(imp.Pos()), ip, rule))
 			}
 		}
 		return nil

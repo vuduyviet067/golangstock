@@ -24,7 +24,7 @@ import (
 
 func TestCreateRequest_RepositoryReceivesNormalizedProduct(t *testing.T) {
 	repo := &fakeProductRepository{createID: 123}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/products", strings.NewReader(
+	req := newRequest(http.MethodPost, "/api/v1/products", strings.NewReader(
 		`{"id":99,"sku":"  SKU010  ","name":" Mouse ","price":25.5,"quantity":3,"minimum_stock":2}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -50,7 +50,7 @@ func TestCreateRequest_RepositoryReceivesNormalizedProduct(t *testing.T) {
 
 func TestUpdateRequest_RepositoryReceivesNormalizedProduct(t *testing.T) {
 	repo := &fakeProductRepository{storedQuantity: 9, storedMinimumStock: 1}
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/products/7", strings.NewReader(
+	req := newRequest(http.MethodPut, "/api/v1/products/7", strings.NewReader(
 		`{"id":99,"sku":" SKU007 ","name":" Keyboard Pro ","price":120.5,"minimum_stock":3}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -104,7 +104,7 @@ func TestCreateRequest_RejectedBeforeRepository(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &fakeProductRepository{createID: 1}
-			req := httptest.NewRequest(tt.method, "/api/v1/products", strings.NewReader(tt.body))
+			req := newRequest(tt.method, "/api/v1/products", strings.NewReader(tt.body))
 			if tt.contentType != "" {
 				req.Header.Set("Content-Type", tt.contentType)
 			}
@@ -113,7 +113,7 @@ func TestCreateRequest_RejectedBeforeRepository(t *testing.T) {
 			}
 			rec := httptest.NewRecorder()
 
-			newTestHandler(repo).Create(rec, req)
+			serveRoute(rec, req, http.MethodPost, "/api/v1/products", newTestHandler(repo).Create)
 
 			contractAssertResponse(t, rec, tt.wantStatus, `{"success":false,"code":"`+tt.wantCode+`","message":"`+tt.wantMessage+`","data":null}`)
 			if repo.stockCalls != 0 || repo.createdProduct != nil {
@@ -147,7 +147,7 @@ func TestUpdateRequest_RejectedBeforeRepository(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &fakeProductRepository{storedQuantity: 4}
-			req := httptest.NewRequest(http.MethodPut, tt.path, strings.NewReader(tt.body))
+			req := newRequest(http.MethodPut, tt.path, strings.NewReader(tt.body))
 			if tt.contentType != "" {
 				req.Header.Set("Content-Type", tt.contentType)
 			}

@@ -201,7 +201,7 @@ func TestReadinessHandler_RejectsOtherMethods(t *testing.T) {
 			defer db.Close()
 
 			rec := httptest.NewRecorder()
-			NewReadinessHandler(db).ServeHTTP(rec, httptest.NewRequest(method, "/ready", nil))
+			serveRoute(rec, httptest.NewRequest(method, "/ready", nil), http.MethodGet, "/ready", NewReadinessHandler(db).ServeHTTP)
 
 			if rec.Code != http.StatusMethodNotAllowed {
 				t.Fatalf("status = %d, want 405; body = %s", rec.Code, rec.Body.String())

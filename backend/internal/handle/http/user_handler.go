@@ -22,12 +22,6 @@ func NewUserHandler(uc *usecase.UserUseCase) *UserHandler {
 }
 
 func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	query := r.URL.Query()
 	page := 1
 	limit := 10
@@ -60,13 +54,7 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) GetByID(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/users/")
+	rawID := pathParam(r, "id")
 	if rawID == "" || strings.Contains(rawID, "/") {
 		response.Error(w, http.StatusBadRequest, codeInvalidUserID, "invalid user ID")
 		return
@@ -88,13 +76,7 @@ func (h *UserHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPatch {
-		w.Header().Set("Allow", http.MethodPatch)
-		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/users/")
+	rawID := pathParam(r, "id")
 	if rawID == "" || strings.Contains(rawID, "/") {
 		response.Error(w, http.StatusBadRequest, codeInvalidUserID, "invalid user ID")
 		return

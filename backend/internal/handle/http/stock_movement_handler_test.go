@@ -111,7 +111,7 @@ func TestStockMovementEndpoints_JSONContract(t *testing.T) {
 			h := newTestStockMovementHandler(&fakeProductRepository{product: product}, movements)
 
 			rec := httptest.NewRecorder()
-			tt.serve(h)(rec, httptest.NewRequest(http.MethodGet, tt.path, nil))
+			tt.serve(h)(rec, newRequest(http.MethodGet, tt.path, nil))
 
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
@@ -146,7 +146,7 @@ func TestStockMovementHandler_PassesPagination(t *testing.T) {
 			h := newTestStockMovementHandler(&fakeProductRepository{product: &domain.Product{ID: 7}}, movements)
 
 			rec := httptest.NewRecorder()
-			tt.serve(h)(rec, httptest.NewRequest(http.MethodGet, tt.path, nil))
+			tt.serve(h)(rec, newRequest(http.MethodGet, tt.path, nil))
 
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
@@ -205,7 +205,11 @@ func TestStockMovementHandler_RejectsInvalidRequests(t *testing.T) {
 			h := newTestStockMovementHandler(products, movements)
 
 			rec := httptest.NewRecorder()
-			tt.serve(h)(rec, httptest.NewRequest(tt.method, tt.path, nil))
+			pattern := "/api/v1/products/{id}/movements"
+			if strings.HasPrefix(tt.path, "/api/v1/stock-movements") {
+				pattern = "/api/v1/stock-movements"
+			}
+			serveRoute(rec, newRequest(tt.method, tt.path, nil), http.MethodGet, pattern, tt.serve(h))
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())

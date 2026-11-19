@@ -9,7 +9,7 @@ The project provides product and inventory management, user authentication, role
 | Component | Technology |
 |---|---|
 | Language | Go |
-| HTTP server and routing | Go standard library (`net/http`) |
+| HTTP server and routing | Go standard library (`net/http`) server, [chi](https://github.com/go-chi/chi) v5 router |
 | Database | PostgreSQL 17 |
 | Database access | `database/sql` |
 | PostgreSQL driver | pgx v5 |

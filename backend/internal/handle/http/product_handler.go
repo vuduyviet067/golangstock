@@ -65,13 +65,7 @@ func currentActorID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 }
 
 func (h *ProductHandler) GetByID(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/products/")
+	rawID := pathParam(r, "id")
 	if rawID == "" || strings.Contains(rawID, "/") {
 		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")
 		return
@@ -92,12 +86,6 @@ func (h *ProductHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	response.Success(w, http.StatusOK, "Product retrieved successfully", product)
 }
 func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	query := r.URL.Query()
 	page := 1
 	limit := 10
@@ -136,12 +124,6 @@ func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 	response.Success(w, http.StatusOK, "Products retrieved successfully", products)
 }
 func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	if !EnforceJSONContentType(w, r) {
 		return
 	}
@@ -179,13 +161,7 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPut {
-		w.Header().Set("Allow", http.MethodPut)
-		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/products/")
+	rawID := pathParam(r, "id")
 	if rawID == "" || strings.Contains(rawID, "/") {
 		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")
 		return
@@ -238,13 +214,7 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProductHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		w.Header().Set("Allow", http.MethodDelete)
-		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/products/")
+	rawID := pathParam(r, "id")
 	if rawID == "" || strings.Contains(rawID, "/") {
 		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")
 		return
@@ -265,14 +235,7 @@ func (h *ProductHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProductHandler) StockIn(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/products/")
-	rawID = strings.TrimSuffix(rawID, "/stock-in")
+	rawID := pathParam(r, "id")
 
 	if rawID == "" || strings.Contains(rawID, "/") {
 		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")
@@ -322,14 +285,7 @@ func (h *ProductHandler) StockIn(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProductHandler) StockOut(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/products/")
-	rawID = strings.TrimSuffix(rawID, "/stock-out")
+	rawID := pathParam(r, "id")
 
 	if rawID == "" || strings.Contains(rawID, "/") {
 		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")

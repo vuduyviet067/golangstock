@@ -86,7 +86,7 @@ func TestUserHandler_List(t *testing.T) {
 		}
 		handler := setupUserHandler(repo)
 
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/users?page=1&limit=10&q=example", nil)
+		req := newRequest(http.MethodGet, "/api/v1/users?page=1&limit=10&q=example", nil)
 		rec := httptest.NewRecorder()
 		handler.List(rec, req)
 
@@ -133,9 +133,9 @@ func TestUserHandler_List(t *testing.T) {
 
 	t.Run("wrong HTTP method", func(t *testing.T) {
 		handler := setupUserHandler(&mockUserRepoForHandler{})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/users", nil)
+		req := newRequest(http.MethodPost, "/api/v1/users", nil)
 		rec := httptest.NewRecorder()
-		handler.List(rec, req)
+		serveRoute(rec, req, http.MethodGet, "/api/v1/users", handler.List)
 
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("expected 405 Method Not Allowed, got %d", rec.Code)
@@ -147,7 +147,7 @@ func TestUserHandler_List(t *testing.T) {
 
 	t.Run("invalid page query param", func(t *testing.T) {
 		handler := setupUserHandler(&mockUserRepoForHandler{})
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/users?page=invalid", nil)
+		req := newRequest(http.MethodGet, "/api/v1/users?page=invalid", nil)
 		rec := httptest.NewRecorder()
 		handler.List(rec, req)
 
@@ -158,7 +158,7 @@ func TestUserHandler_List(t *testing.T) {
 
 	t.Run("invalid limit query param", func(t *testing.T) {
 		handler := setupUserHandler(&mockUserRepoForHandler{})
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/users?limit=notanumber", nil)
+		req := newRequest(http.MethodGet, "/api/v1/users?limit=notanumber", nil)
 		rec := httptest.NewRecorder()
 		handler.List(rec, req)
 
@@ -184,7 +184,7 @@ func TestUserHandler_GetByID(t *testing.T) {
 		}
 		handler := setupUserHandler(repo)
 
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/users/42", nil)
+		req := newRequest(http.MethodGet, "/api/v1/users/42", nil)
 		rec := httptest.NewRecorder()
 		handler.GetByID(rec, req)
 
@@ -222,7 +222,7 @@ func TestUserHandler_GetByID(t *testing.T) {
 		handler := setupUserHandler(&mockUserRepoForHandler{})
 
 		for _, badPath := range []string{"/api/v1/users/abc", "/api/v1/users/-1", "/api/v1/users/0", "/api/v1/users/1/extra"} {
-			req := httptest.NewRequest(http.MethodGet, badPath, nil)
+			req := newRequest(http.MethodGet, badPath, nil)
 			rec := httptest.NewRecorder()
 			handler.GetByID(rec, req)
 
@@ -240,7 +240,7 @@ func TestUserHandler_GetByID(t *testing.T) {
 		}
 		handler := setupUserHandler(repo)
 
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/users/999", nil)
+		req := newRequest(http.MethodGet, "/api/v1/users/999", nil)
 		rec := httptest.NewRecorder()
 		handler.GetByID(rec, req)
 
@@ -251,9 +251,9 @@ func TestUserHandler_GetByID(t *testing.T) {
 
 	t.Run("wrong HTTP method", func(t *testing.T) {
 		handler := setupUserHandler(&mockUserRepoForHandler{})
-		req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/1", nil)
+		req := newRequest(http.MethodDelete, "/api/v1/users/1", nil)
 		rec := httptest.NewRecorder()
-		handler.GetByID(rec, req)
+		serveRoute(rec, req, http.MethodGet, "/api/v1/users/{id}", handler.GetByID)
 
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("expected 405 Method Not Allowed, got %d", rec.Code)
@@ -285,7 +285,7 @@ func TestUserHandler_Update(t *testing.T) {
 		handler := setupUserHandler(repo)
 
 		reqBody := `{"email":"newemail@example.com","role":"admin"}`
-		req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/10", bytes.NewBufferString(reqBody))
+		req := newRequest(http.MethodPatch, "/api/v1/users/10", bytes.NewBufferString(reqBody))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		handler.Update(rec, req)
@@ -324,7 +324,7 @@ func TestUserHandler_Update(t *testing.T) {
 			`{"email":"valid@example.com","unknown_field":123}`,
 			`{"password":"newpassword"}`,
 		} {
-			req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/10", bytes.NewBufferString(badBody))
+			req := newRequest(http.MethodPatch, "/api/v1/users/10", bytes.NewBufferString(badBody))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			handler.Update(rec, req)
@@ -337,7 +337,7 @@ func TestUserHandler_Update(t *testing.T) {
 
 	t.Run("invalid user ID", func(t *testing.T) {
 		handler := setupUserHandler(&mockUserRepoForHandler{})
-		req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/abc", bytes.NewBufferString(`{"role":"admin"}`))
+		req := newRequest(http.MethodPatch, "/api/v1/users/abc", bytes.NewBufferString(`{"role":"admin"}`))
 		rec := httptest.NewRecorder()
 		handler.Update(rec, req)
 
@@ -355,7 +355,7 @@ func TestUserHandler_Update(t *testing.T) {
 		}
 		handler := setupUserHandler(repo)
 
-		req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/10", bytes.NewBufferString(`{}`))
+		req := newRequest(http.MethodPatch, "/api/v1/users/10", bytes.NewBufferString(`{}`))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		handler.Update(rec, req)
@@ -375,7 +375,7 @@ func TestUserHandler_Update(t *testing.T) {
 		handler := setupUserHandler(repo)
 
 		// Invalid email
-		req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/10", bytes.NewBufferString(`{"email":"bad-email"}`))
+		req := newRequest(http.MethodPatch, "/api/v1/users/10", bytes.NewBufferString(`{"email":"bad-email"}`))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		handler.Update(rec, req)
@@ -384,7 +384,7 @@ func TestUserHandler_Update(t *testing.T) {
 		}
 
 		// Invalid role
-		req = httptest.NewRequest(http.MethodPatch, "/api/v1/users/10", bytes.NewBufferString(`{"role":"superadmin"}`))
+		req = newRequest(http.MethodPatch, "/api/v1/users/10", bytes.NewBufferString(`{"role":"superadmin"}`))
 		req.Header.Set("Content-Type", "application/json")
 		rec = httptest.NewRecorder()
 		handler.Update(rec, req)
@@ -405,7 +405,7 @@ func TestUserHandler_Update(t *testing.T) {
 		}
 		handler := setupUserHandler(repo)
 
-		req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/10", bytes.NewBufferString(`{"email":"taken@example.com"}`))
+		req := newRequest(http.MethodPatch, "/api/v1/users/10", bytes.NewBufferString(`{"email":"taken@example.com"}`))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		handler.Update(rec, req)
@@ -423,7 +423,7 @@ func TestUserHandler_Update(t *testing.T) {
 		}
 		handler := setupUserHandler(repo)
 
-		req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/99", bytes.NewBufferString(`{"role":"admin"}`))
+		req := newRequest(http.MethodPatch, "/api/v1/users/99", bytes.NewBufferString(`{"role":"admin"}`))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		handler.Update(rec, req)
@@ -435,9 +435,9 @@ func TestUserHandler_Update(t *testing.T) {
 
 	t.Run("wrong HTTP method", func(t *testing.T) {
 		handler := setupUserHandler(&mockUserRepoForHandler{})
-		req := httptest.NewRequest(http.MethodPut, "/api/v1/users/10", bytes.NewBufferString(`{"role":"admin"}`))
+		req := newRequest(http.MethodPut, "/api/v1/users/10", bytes.NewBufferString(`{"role":"admin"}`))
 		rec := httptest.NewRecorder()
-		handler.Update(rec, req)
+		serveRoute(rec, req, http.MethodPatch, "/api/v1/users/{id}", handler.Update)
 
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("expected 405 Method Not Allowed, got %d", rec.Code)

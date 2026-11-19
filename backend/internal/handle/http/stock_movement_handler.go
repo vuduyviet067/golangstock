@@ -52,14 +52,7 @@ func parsePagination(w http.ResponseWriter, r *http.Request) (int, int, bool) {
 
 // ListByProduct serves GET /api/v1/products/{id}/movements.
 func (h *StockMovementHandler) ListByProduct(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/products/")
-	rawID = strings.TrimSuffix(rawID, "/movements")
+	rawID := pathParam(r, "id")
 	if rawID == "" || strings.Contains(rawID, "/") {
 		response.Error(w, http.StatusBadRequest, codeInvalidProductID, "invalid product ID")
 		return
@@ -87,12 +80,6 @@ func (h *StockMovementHandler) ListByProduct(w http.ResponseWriter, r *http.Requ
 
 // List serves GET /api/v1/stock-movements. The router restricts it to admins.
 func (h *StockMovementHandler) List(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	page, limit, ok := parsePagination(w, r)
 	if !ok {
 		return

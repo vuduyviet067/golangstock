@@ -26,7 +26,7 @@ func TestUserHandler_RepositoryReturnsNilNil(t *testing.T) {
 
 	t.Run("get", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		setupUserHandler(newRepo(t)).GetByID(rec, httptest.NewRequest(http.MethodGet, "/api/v1/users/7", nil))
+		setupUserHandler(newRepo(t)).GetByID(rec, newRequest(http.MethodGet, "/api/v1/users/7", nil))
 
 		contractAssertResponse(t, rec, http.StatusNotFound, notFound)
 	})

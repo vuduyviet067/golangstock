@@ -3,12 +3,21 @@ package app
 import (
 	"database/sql"
 	"net/http"
-	"strings"
+
+	"github.com/go-chi/chi/v5"
 
 	productHTTP "gostock/internal/handle/http"
-	"gostock/pkg/response"
 )
 
+// NewRouter builds the API router.
+//
+// Routes are grouped by permission: public, authenticated (AuthMiddleware) and
+// admin (AuthMiddleware then RequireAdmin). A protected group is a chi
+// subrouter whose middleware runs before chi resolves the method, so a wrong
+// method gets 401 or 403 before 405, as before the move to chi. Unknown paths
+// get 404 NOT_FOUND before any authentication (RequireRoute); a wrong method
+// gets 405 METHOD_NOT_ALLOWED with an Allow header. Both are written by the
+// central handlers of internal/handle/http. CORS wraps the router in app.New.
 func NewRouter(
 	db *sql.DB,
 	productHandler *productHTTP.ProductHandler,
@@ -17,132 +26,73 @@ func NewRouter(
 	userHandler *productHTTP.UserHandler,
 	stockMovementHandler *productHTTP.StockMovementHandler,
 	dashboardHandler *productHTTP.DashboardHandler,
-) *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", productHTTP.HealthHandler)
+) http.Handler {
+	r := chi.NewRouter()
+	routes := productHTTP.NewRouteTable(r)
+	r.NotFound(productHTTP.NotFound)
+	r.MethodNotAllowed(routes.MethodNotAllowed)
+	r.Use(routes.RequireRoute)
 
-	// Public Auth routes
-	mux.HandleFunc("/api/v1/auth/register", authHandler.Register)
-	mux.HandleFunc("/api/v1/auth/login", authHandler.Login)
-	mux.HandleFunc("/api/v1/auth/refresh", authHandler.Refresh)
-	mux.HandleFunc("/api/v1/auth/logout", authHandler.Logout)
+	authenticated := productHTTP.AuthMiddleware(authUseCase)
+	admin := productHTTP.RequireAdmin
 
-	// Protected Auth routes
-	authMiddleware := productHTTP.AuthMiddleware(authUseCase)
-	mux.Handle(
-		"/api/v1/auth/me",
-		authMiddleware(
-			http.HandlerFunc(authHandler.Me),
-		),
-	)
-
-	// Readiness probe (pings PostgreSQL when available)
+	// Public.
+	r.Get("/health", productHTTP.HealthHandler)
 	if db != nil {
-		readinessHandler := productHTTP.NewReadinessHandler(db)
-		mux.Handle("/ready", readinessHandler)
+		// Readiness probe (pings PostgreSQL).
+		r.Method(http.MethodGet, "/ready", productHTTP.NewReadinessHandler(db))
 	}
 
-	createHandler := productHTTP.RequireAdmin(http.HandlerFunc(productHandler.Create))
-	updateHandler := productHTTP.RequireAdmin(http.HandlerFunc(productHandler.Update))
-	deleteHandler := productHTTP.RequireAdmin(http.HandlerFunc(productHandler.Delete))
+	r.Route("/api/v1", func(r chi.Router) {
+		// Public.
+		r.Post("/auth/register", authHandler.Register)
+		r.Post("/auth/login", authHandler.Login)
+		r.Post("/auth/refresh", authHandler.Refresh)
+		r.Post("/auth/logout", authHandler.Logout)
 
-	mux.Handle("/api/v1/products", authMiddleware(http.HandlerFunc(func(
-		w http.ResponseWriter,
-		r *http.Request,
-	) {
-		switch r.Method {
-		case http.MethodGet:
-			productHandler.List(w, r)
-		case http.MethodPost:
-			createHandler.ServeHTTP(w, r)
-		default:
-			w.Header().Set("Allow", "GET, POST")
-			response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		}
-	})))
-
-	mux.Handle("/api/v1/products/", authMiddleware(http.HandlerFunc(func(
-		w http.ResponseWriter,
-		r *http.Request,
-	) {
-		path := r.URL.Path
-
-		// GET /api/v1/products/{id}/movements: User & Admin.
-		if stockMovementHandler != nil && strings.HasSuffix(path, "/movements") {
-			stockMovementHandler.ListByProduct(w, r)
-			return
-		}
-
-		if strings.HasSuffix(path, "/stock-in") {
-			productHandler.StockIn(w, r)
-			return
-		}
-
-		if strings.HasSuffix(path, "/stock-out") {
-			productHandler.StockOut(w, r)
-			return
-		}
-
-		switch r.Method {
-		case http.MethodGet:
-			productHandler.GetByID(w, r)
-		case http.MethodPut:
-			updateHandler.ServeHTTP(w, r)
-		case http.MethodDelete:
-			deleteHandler.ServeHTTP(w, r)
-		default:
-			w.Header().Set("Allow", "GET, PUT, DELETE")
-			response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		}
-	})))
-
-	if userHandler != nil {
-		mux.Handle("/api/v1/users", authMiddleware(productHTTP.RequireAdmin(http.HandlerFunc(func(
-			w http.ResponseWriter,
-			r *http.Request,
-		) {
-			if r.Method == http.MethodGet {
-				userHandler.List(w, r)
-				return
+		// Authenticated: any role. Writing products is admin only.
+		r.Route("/auth/me", func(r chi.Router) {
+			r.Use(authenticated)
+			r.Get("/", authHandler.Me)
+		})
+		r.Route("/products", func(r chi.Router) {
+			r.Use(authenticated)
+			r.Get("/", productHandler.List)
+			r.With(admin).Post("/", productHandler.Create)
+			r.Get("/{id}", productHandler.GetByID)
+			r.With(admin).Put("/{id}", productHandler.Update)
+			r.With(admin).Delete("/{id}", productHandler.Delete)
+			if stockMovementHandler != nil {
+				r.Get("/{id}/movements", stockMovementHandler.ListByProduct)
 			}
-			w.Header().Set("Allow", "GET")
-			response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		}))))
+			r.Post("/{id}/stock-in", productHandler.StockIn)
+			r.Post("/{id}/stock-out", productHandler.StockOut)
+		})
 
-		mux.Handle("/api/v1/users/", authMiddleware(productHTTP.RequireAdmin(http.HandlerFunc(func(
-			w http.ResponseWriter,
-			r *http.Request,
-		) {
-			switch r.Method {
-			case http.MethodGet:
-				userHandler.GetByID(w, r)
-			case http.MethodPatch:
-				userHandler.Update(w, r)
-			default:
-				w.Header().Set("Allow", "GET, PATCH")
-				response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-			}
-		}))))
-	}
+		// Admin. The role is checked before the method and the query.
+		if userHandler != nil {
+			r.Route("/users", func(r chi.Router) {
+				r.Use(authenticated, admin)
+				r.Get("/", userHandler.List)
+				r.Get("/{id}", userHandler.GetByID)
+				r.Patch("/{id}", userHandler.Update)
+			})
+		}
+		if stockMovementHandler != nil {
+			// Includes movements of deleted products.
+			r.Route("/stock-movements", func(r chi.Router) {
+				r.Use(authenticated, admin)
+				r.Get("/", stockMovementHandler.List)
+			})
+		}
+		if dashboardHandler != nil {
+			r.Route("/dashboard", func(r chi.Router) {
+				r.Use(authenticated, admin)
+				r.Get("/summary", dashboardHandler.Summary)
+				r.Get("/stock-movements", dashboardHandler.StockMovementChart)
+			})
+		}
+	})
 
-	// GET /api/v1/stock-movements: Admin only. Includes movements of deleted
-	// products.
-	if stockMovementHandler != nil {
-		mux.Handle("/api/v1/stock-movements", authMiddleware(productHTTP.RequireAdmin(
-			http.HandlerFunc(stockMovementHandler.List),
-		)))
-	}
-
-	// GET /api/v1/dashboard/summary and /api/v1/dashboard/stock-movements:
-	// Admin only. The role is checked before the method and the query.
-	if dashboardHandler != nil {
-		mux.Handle("/api/v1/dashboard/summary", authMiddleware(productHTTP.RequireAdmin(
-			http.HandlerFunc(dashboardHandler.Summary),
-		)))
-		mux.Handle("/api/v1/dashboard/stock-movements", authMiddleware(productHTTP.RequireAdmin(
-			http.HandlerFunc(dashboardHandler.StockMovementChart),
-		)))
-	}
-
-	return mux
+	return r
 }

@@ -28,12 +28,6 @@ func NewAuthHandler(uc *usecase.AuthUseCase, cookies *CookieManager) *AuthHandle
 }
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	if !EnforceJSONContentType(w, r) {
 		return
 	}
@@ -65,12 +59,6 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	if !EnforceJSONContentType(w, r) {
 		return
 	}
@@ -104,12 +92,6 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	cookie, err := r.Cookie(RefreshTokenCookieName)
 	if err != nil || cookie.Value == "" {
 		response.Error(w, http.StatusUnauthorized, response.CodeUnauthenticated, "refresh token required")
@@ -134,12 +116,6 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	user, ok := CurrentUser(r.Context())
 	if !ok || user == nil {
 		response.Error(w, http.StatusUnauthorized, response.CodeUnauthenticated, "authentication required")
@@ -150,12 +126,6 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		response.Error(w, http.StatusMethodNotAllowed, response.CodeMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	h.cookies.ClearAuthCookies(w)
 
 	cookie, err := r.Cookie(RefreshTokenCookieName)

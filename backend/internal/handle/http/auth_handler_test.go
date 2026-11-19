@@ -667,7 +667,7 @@ func TestAuthHandler_Logout(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/logout", nil)
 		rec := httptest.NewRecorder()
 
-		handler.Logout(rec, req)
+		serveRoute(rec, req, http.MethodPost, "/api/v1/auth/logout", handler.Logout)
 
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)

@@ -112,7 +112,7 @@ func TestAuthContract_WrongMethods(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			tc.serve(rec, httptest.NewRequest(tc.method, "/api/v1/auth/"+tc.name, nil))
+			serveRoute(rec, httptest.NewRequest(tc.method, "/api/v1/auth/"+tc.name, nil), tc.allow, "/api/v1/auth/"+tc.name, tc.serve)
 
 			contractAssertResponse(t, rec, http.StatusMethodNotAllowed, `{"success":false,"code":"METHOD_NOT_ALLOWED","message":"method not allowed","data":null}`)
 			contractAssertNoCookies(t, rec)
