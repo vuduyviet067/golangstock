@@ -4,10 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
-
-	"gostock/internal/dto"
 )
 
 type sampleProduct struct {
@@ -39,7 +38,7 @@ func TestSuccess(t *testing.T) {
 		t.Fatalf("expected Content-Type application/json, got %q", contentType)
 	}
 
-	var res dto.APIResponse
+	var res APIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
 		t.Fatalf("failed to decode response JSON: %v", err)
 	}
@@ -78,7 +77,7 @@ func TestSuccess_CreatedWithNilData(t *testing.T) {
 
 func TestError(t *testing.T) {
 	rec := httptest.NewRecorder()
-	Error(rec, http.StatusNotFound, "Product not found")
+	Error(rec, http.StatusNotFound, "PRODUCT_NOT_FOUND", "Product not found")
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
@@ -90,12 +89,12 @@ func TestError(t *testing.T) {
 	}
 
 	bodyStr := strings.TrimSpace(rec.Body.String())
-	expected := `{"success":false,"message":"Product not found","data":null}`
+	expected := `{"success":false,"code":"PRODUCT_NOT_FOUND","message":"Product not found","data":null}`
 	if bodyStr != expected {
 		t.Errorf("expected body %s, got %s", expected, bodyStr)
 	}
 
-	var res dto.APIResponse
+	var res APIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
 		t.Fatalf("failed to decode response JSON: %v", err)
 	}
@@ -108,27 +107,6 @@ func TestError(t *testing.T) {
 	}
 	if res.Data != nil {
 		t.Errorf("expected data to be nil, got %v", res.Data)
-	}
-}
-
-func TestJSON(t *testing.T) {
-	rec := httptest.NewRecorder()
-	payload := map[string]string{"custom": "value"}
-	JSON(rec, http.StatusAccepted, payload)
-
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
-	}
-	if rec.Header().Get("Content-Type") != "application/json" {
-		t.Fatalf("expected Content-Type application/json")
-	}
-
-	var result map[string]string
-	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
-		t.Fatalf("failed to decode JSON: %v", err)
-	}
-	if result["custom"] != "value" {
-		t.Errorf("expected custom=value, got %v", result)
 	}
 }
 
@@ -156,7 +134,7 @@ func TestMarshalErrorFallback(t *testing.T) {
 	}
 
 	bodyStr := strings.TrimSpace(rec.Body.String())
-	expected := `{"success":false,"message":"` + InternalServerErrorMessage + `","data":null}`
+	expected := `{"success":false,"code":"INTERNAL_ERROR","message":"` + InternalServerErrorMessage + `","data":null}`
 	if bodyStr != expected {
 		t.Errorf("expected body %s, got %s", expected, bodyStr)
 	}
@@ -167,7 +145,7 @@ func TestHeaderPreservation(t *testing.T) {
 	rec.Header().Set("Allow", "GET, POST")
 	rec.Header().Set("X-Custom-Header", "present")
 
-	Error(rec, http.StatusMethodNotAllowed, "method not allowed")
+	Error(rec, http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed")
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
@@ -192,7 +170,7 @@ func TestCreated(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusCreated, rec.Code)
 	}
 
-	var res dto.APIResponse
+	var res APIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -211,18 +189,21 @@ func TestValidationError(t *testing.T) {
 		"password": "password too short",
 	}
 
-	ValidationError(rec, "Validation failed", fields)
+	ValidationError(rec, CodeValidationError, "Validation failed", fields)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
 	}
 
-	var res dto.APIResponse
+	var res APIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 	if res.Success {
 		t.Error("expected success=false")
+	}
+	if res.Code != CodeValidationError {
+		t.Errorf("expected code %q, got %q", CodeValidationError, res.Code)
 	}
 	if res.Message != "Validation failed" {
 		t.Errorf("expected message 'Validation failed', got %q", res.Message)
@@ -251,7 +232,7 @@ func TestPaginated(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
 
-	var res dto.APIResponse
+	var res APIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -260,11 +241,139 @@ func TestPaginated(t *testing.T) {
 	}
 
 	dataBytes, _ := json.Marshal(res.Data)
-	var paginated dto.PaginatedData
+	var paginated PaginatedData
 	if err := json.Unmarshal(dataBytes, &paginated); err != nil {
 		t.Fatalf("failed to decode paginated data: %v", err)
 	}
 	if paginated.Pagination.Page != 1 || paginated.Pagination.Limit != 10 || paginated.Pagination.Total != 25 || paginated.Pagination.TotalPages != 3 {
 		t.Errorf("unexpected pagination meta: %+v", paginated.Pagination)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The code field.
+// ---------------------------------------------------------------------------
+
+// decodeRaw returns the top-level members of the response body.
+func decodeRaw(t *testing.T, rec *httptest.ResponseRecorder) map[string]json.RawMessage {
+	t.Helper()
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode %s: %v", rec.Body.String(), err)
+	}
+	return raw
+}
+
+func TestCode_PresentOnErrorsAbsentOnSuccess(t *testing.T) {
+	cases := []struct {
+		name     string
+		write    func(w http.ResponseWriter)
+		wantCode string // "" means the member must be absent
+	}{
+		{"Success", func(w http.ResponseWriter) { Success(w, http.StatusOK, "ok", map[string]int{"n": 1}) }, ""},
+		{"Success with nil data", func(w http.ResponseWriter) { Success(w, http.StatusOK, "ok", nil) }, ""},
+		{"Created", func(w http.ResponseWriter) { Created(w, "created", nil) }, ""},
+		{"Paginated", func(w http.ResponseWriter) { Paginated(w, "list", []int{}, 1, 10, 0) }, ""},
+		{"Error", func(w http.ResponseWriter) { Error(w, http.StatusConflict, "SKU_EXISTS", "SKU already exists") }, "SKU_EXISTS"},
+		{"ValidationError", func(w http.ResponseWriter) {
+			ValidationError(w, CodeValidationError, "invalid", map[string]string{"f": "bad"})
+		}, CodeValidationError},
+		{"marshal fallback", func(w http.ResponseWriter) { Success(w, http.StatusOK, "x", make(chan int)) }, CodeInternalError},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			tc.write(rec)
+			raw := decodeRaw(t, rec)
+			got, present := raw["code"]
+			if tc.wantCode == "" {
+				if present {
+					t.Fatalf("successful response has a code member: %s", rec.Body.String())
+				}
+				return
+			}
+			if !present {
+				t.Fatalf("error response has no code member: %s", rec.Body.String())
+			}
+			if want := `"` + tc.wantCode + `"`; string(got) != want {
+				t.Errorf("code = %s, want %s", got, want)
+			}
+		})
+	}
+}
+
+func TestCode_EnvelopeMemberOrder(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Error(rec, http.StatusUnauthorized, CodeUnauthenticated, "authentication required")
+	want := `{"success":false,"code":"UNAUTHENTICATED","message":"authentication required","data":null}`
+	if got := strings.TrimSpace(rec.Body.String()); got != want {
+		t.Errorf("body = %s, want %s", got, want)
+	}
+}
+
+func TestCode_EmptyCodeFallsBackToStatus(t *testing.T) {
+	cases := []struct {
+		status int
+		want   string
+	}{
+		{http.StatusBadRequest, CodeValidationError},
+		{http.StatusUnauthorized, CodeUnauthenticated},
+		{http.StatusForbidden, CodeForbidden},
+		{http.StatusNotFound, CodeNotFound},
+		{http.StatusMethodNotAllowed, CodeMethodNotAllowed},
+		{http.StatusConflict, CodeConflict},
+		{http.StatusUnsupportedMediaType, CodeUnsupportedMediaType},
+		{http.StatusInternalServerError, CodeInternalError},
+		{http.StatusServiceUnavailable, CodeServiceUnavailable},
+		{http.StatusBadGateway, CodeInternalError},
+		{http.StatusTeapot, "CLIENT_ERROR"},
+	}
+	for _, tc := range cases {
+		rec := httptest.NewRecorder()
+		Error(rec, tc.status, "", "message")
+		var res APIResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+			t.Fatal(err)
+		}
+		if res.Code != tc.want {
+			t.Errorf("status %d: code = %q, want %q", tc.status, res.Code, tc.want)
+		}
+		if got := CodeForStatus(tc.status); got != tc.want {
+			t.Errorf("CodeForStatus(%d) = %q, want %q", tc.status, got, tc.want)
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	ValidationError(rec, "", "invalid", map[string]string{"f": "bad"})
+	var res APIResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Code != CodeValidationError {
+		t.Errorf("ValidationError with empty code: code = %q, want %q", res.Code, CodeValidationError)
+	}
+}
+
+func TestCode_GeneralCodesAreUpperSnake(t *testing.T) {
+	upperSnake := regexp.MustCompile(`^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$`)
+	for _, code := range []string{CodeValidationError, CodeUnauthenticated, CodeForbidden, CodeNotFound,
+		CodeMethodNotAllowed, CodeConflict, CodeUnsupportedMediaType, CodeInternalError, CodeServiceUnavailable,
+		CodeForStatus(http.StatusTeapot)} {
+		if !upperSnake.MatchString(code) {
+			t.Errorf("code %q is not UPPER_SNAKE", code)
+		}
+	}
+}
+
+// The logout body pinned by the contract tests, built with the envelope. The
+// mapper and use case tests asserted it with dto.APIResponse before the
+// envelope moved here.
+func TestSuccess_LogoutEnvelope(t *testing.T) {
+	got, err := json.Marshal(APIResponse{Success: true, Message: "logged out", Data: map[string]string{"message": "logged out"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"success":true,"message":"logged out","data":{"message":"logged out"}}`; string(got) != want {
+		t.Errorf("JSON mismatch\n got: %s\nwant: %s", got, want)
 	}
 }

@@ -199,7 +199,7 @@ func TestAuthUserContract_PostgreSQL(t *testing.T) {
 		t.Fatalf("init jwt: %v", err)
 	}
 	userRepo := postgres.NewUserRepository(db)
-	authUC := usecase.NewAuthUseCase(userRepo, postgres.NewRefreshTokenRepository(db), jwtService, 15*time.Minute, 7*24*time.Hour, 15*time.Second)
+	authUC := usecase.NewAuthUseCase(userRepo, postgres.NewRefreshTokenRepository(db), jwtService, 15*time.Minute, 7*24*time.Hour, 15*time.Second, usecase.WithRegistration(true))
 	router := NewRouter(
 		db,
 		productHTTP.NewProductHandler(usecase.NewProductUseCase(postgres.NewProductRepository(db))),
@@ -256,7 +256,7 @@ func TestAuthUserContract_PostgreSQL(t *testing.T) {
 	}
 
 	rec = serve(http.MethodPost, "/api/v1/auth/register", credentials(memberEmail))
-	pgContractAssertBody(t, "register duplicate", rec, http.StatusConflict, `{"success":false,"message":"email already exists","data":null}`)
+	pgContractAssertBody(t, "register duplicate", rec, http.StatusConflict, `{"success":false,"code":"EMAIL_EXISTS","message":"email already exists","data":null}`)
 
 	rec = serve(http.MethodPost, "/api/v1/auth/register", credentials(adminEmail))
 	if rec.Code != http.StatusCreated {
@@ -276,7 +276,7 @@ func TestAuthUserContract_PostgreSQL(t *testing.T) {
 	pgContractAssertNoSecrets(t, "login", rec.Body.String(), member.PasswordHash, password, memberAccess.Value, memberRefresh.Value)
 
 	rec = serve(http.MethodPost, "/api/v1/auth/login", fmt.Sprintf(`{"email":%q,"password":"WrongPass123!"}`, memberEmail))
-	pgContractAssertBody(t, "login wrong password", rec, http.StatusUnauthorized, `{"success":false,"message":"invalid email or password","data":null}`)
+	pgContractAssertBody(t, "login wrong password", rec, http.StatusUnauthorized, `{"success":false,"code":"INVALID_CREDENTIALS","message":"invalid email or password","data":null}`)
 
 	rec = serve(http.MethodPost, "/api/v1/auth/login", credentials(adminEmail))
 	if rec.Code != http.StatusOK {
@@ -295,7 +295,7 @@ func TestAuthUserContract_PostgreSQL(t *testing.T) {
 	pgContractAssertNoSecrets(t, "me", rec.Body.String(), member.PasswordHash, memberAccess.Value)
 
 	rec = serve(http.MethodGet, "/api/v1/auth/me", "")
-	pgContractAssertBody(t, "me unauthenticated", rec, http.StatusUnauthorized, `{"success":false,"message":"authentication required","data":null}`)
+	pgContractAssertBody(t, "me unauthenticated", rec, http.StatusUnauthorized, `{"success":false,"code":"UNAUTHENTICATED","message":"authentication required","data":null}`)
 
 	// --- Refresh ------------------------------------------------------------
 	rec = serve(http.MethodPost, "/api/v1/auth/refresh", "", memberRefresh)
@@ -309,11 +309,11 @@ func TestAuthUserContract_PostgreSQL(t *testing.T) {
 	pgContractAssertNoSecrets(t, "refresh", rec.Body.String(), member.PasswordHash, rotatedAccess.Value, rotatedRefresh.Value, memberRefresh.Value)
 
 	rec = serve(http.MethodPost, "/api/v1/auth/refresh", "")
-	pgContractAssertBody(t, "refresh without cookie", rec, http.StatusUnauthorized, `{"success":false,"message":"refresh token required","data":null}`)
+	pgContractAssertBody(t, "refresh without cookie", rec, http.StatusUnauthorized, `{"success":false,"code":"UNAUTHENTICATED","message":"refresh token required","data":null}`)
 
 	// --- Users: authorization ----------------------------------------------
 	rec = serve(http.MethodGet, "/api/v1/users", "", memberAccess)
-	pgContractAssertBody(t, "users as member", rec, http.StatusForbidden, `{"success":false,"message":"forbidden: admin role required","data":null}`)
+	pgContractAssertBody(t, "users as member", rec, http.StatusForbidden, `{"success":false,"code":"FORBIDDEN","message":"forbidden: admin role required","data":null}`)
 
 	// --- Users: List --------------------------------------------------------
 	rec = serve(http.MethodGet, "/api/v1/users?page=1&limit=10&q="+tag, "", adminAccess)
@@ -342,7 +342,7 @@ func TestAuthUserContract_PostgreSQL(t *testing.T) {
 	pgContractAssertNoSecrets(t, "users get", rec.Body.String(), member.PasswordHash)
 
 	rec = serve(http.MethodGet, "/api/v1/users/9223372036854775807", "", adminAccess)
-	pgContractAssertBody(t, "users get missing", rec, http.StatusNotFound, `{"success":false,"message":"user not found","data":null}`)
+	pgContractAssertBody(t, "users get missing", rec, http.StatusNotFound, `{"success":false,"code":"USER_NOT_FOUND","message":"user not found","data":null}`)
 
 	// --- Users: Update ------------------------------------------------------
 	rec = serve(http.MethodPatch, fmt.Sprintf("/api/v1/users/%d", member.ID), fmt.Sprintf(`{"email":%q}`, strings.ToUpper(renamedEmail)), adminAccess)
@@ -356,7 +356,7 @@ func TestAuthUserContract_PostgreSQL(t *testing.T) {
 	pgContractAssertNoSecrets(t, "users update", rec.Body.String(), renamed.PasswordHash)
 
 	rec = serve(http.MethodPatch, fmt.Sprintf("/api/v1/users/%d", member.ID), fmt.Sprintf(`{"email":%q}`, adminEmail), adminAccess)
-	pgContractAssertBody(t, "users update duplicate", rec, http.StatusConflict, `{"success":false,"message":"email already exists","data":null}`)
+	pgContractAssertBody(t, "users update duplicate", rec, http.StatusConflict, `{"success":false,"code":"EMAIL_EXISTS","message":"email already exists","data":null}`)
 
 	// --- Logout -------------------------------------------------------------
 	rec = serve(http.MethodPost, "/api/v1/auth/logout", "", rotatedRefresh)
@@ -370,5 +370,5 @@ func TestAuthUserContract_PostgreSQL(t *testing.T) {
 	}
 
 	rec = serve(http.MethodPost, "/api/v1/auth/refresh", "", rotatedRefresh)
-	pgContractAssertBody(t, "refresh after logout", rec, http.StatusUnauthorized, `{"success":false,"message":"invalid or expired refresh token","data":null}`)
+	pgContractAssertBody(t, "refresh after logout", rec, http.StatusUnauthorized, `{"success":false,"code":"INVALID_REFRESH_TOKEN","message":"invalid or expired refresh token","data":null}`)
 }

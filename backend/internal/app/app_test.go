@@ -120,7 +120,7 @@ func (f *fakeTokenManager) ValidateAccessToken(tokenStr string) (*dto.TokenClaim
 	return &dto.TokenClaims{UserID: 1, Email: "test@example.com", Role: "user"}, nil
 }
 
-func setupTestRouter() *http.ServeMux {
+func setupTestRouter() http.Handler {
 	productRepo := &fakeProductRepo{}
 	productUC := usecase.NewProductUseCase(productRepo)
 	productHandler := productHTTP.NewProductHandler(productUC)

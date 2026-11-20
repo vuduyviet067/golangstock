@@ -106,8 +106,8 @@ func TestStockMovementRoutes_NotRegisteredWithoutHandler(t *testing.T) {
 		wantStatus int
 	}{
 		{"/api/v1/stock-movements", http.StatusNotFound},
-		// Falls through to GET /api/v1/products/{id}, which rejects the ID.
-		{"/api/v1/products/1/movements", http.StatusBadRequest},
+		// Not registered without a handler: 404 NOT_FOUND, no fall-through to GET /api/v1/products/{id}.
+		{"/api/v1/products/1/movements", http.StatusNotFound},
 	}
 
 	for _, tt := range tests {

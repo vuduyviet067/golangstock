@@ -70,7 +70,7 @@ func TestProductHandlerConcurrentStockOut(t *testing.T) {
 			path := fmt.Sprintf(
 				"/api/v1/products/%d/stock-out", id,
 			)
-			req := httptest.NewRequest(
+			req := newRequest(
 				stdhttp.MethodPost,
 				path,
 				strings.NewReader(`{"quantity":4}`),
@@ -246,7 +246,7 @@ func TestProductUpdateCannotRestoreStaleStock(t *testing.T) {
 	productPath := fmt.Sprintf("/api/v1/products/%d", id)
 
 	send := func(method, path, body string, serve func(stdhttp.ResponseWriter, *stdhttp.Request)) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req := newRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		serve(rec, withUserID(req, actorID))
@@ -309,7 +309,7 @@ func TestProductMinimumStockRoundTrip(t *testing.T) {
 	actorID := createIntegrationActor(t, db)
 
 	send := func(method, path, body string, serve func(stdhttp.ResponseWriter, *stdhttp.Request)) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req := newRequest(method, path, strings.NewReader(body))
 		if body != "" {
 			req.Header.Set("Content-Type", "application/json")
 		}
@@ -439,7 +439,7 @@ func TestProductCreateWithoutMinimumStockDefaultsToZero(t *testing.T) {
 	// leave the product behind.
 	cleanupProductBySKU(t, db, sku)
 
-	req := httptest.NewRequest(stdhttp.MethodPost, "/api/v1/products",
+	req := newRequest(stdhttp.MethodPost, "/api/v1/products",
 		strings.NewReader(fmt.Sprintf(`{"sku":%q,"name":"Default Min","price":1,"quantity":0}`, sku)))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -480,7 +480,7 @@ func TestProductHandlerConcurrentStockMovementsConsistent(t *testing.T) {
 	actorID := createIntegrationActor(t, db)
 
 	post := func(path, body string, serve func(stdhttp.ResponseWriter, *stdhttp.Request)) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(stdhttp.MethodPost, path, strings.NewReader(body))
+		req := newRequest(stdhttp.MethodPost, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		serve(rec, withUserID(req, actorID))

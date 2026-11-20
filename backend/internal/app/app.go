@@ -99,6 +99,8 @@ func newApp(cfg dto.AppConfig, opener dbOpener, postDBHook func(db *sql.DB) erro
 		cfg.AccessTokenTTL,
 		cfg.RefreshTokenTTL,
 		cfg.RefreshTokenGracePeriod,
+		usecase.WithRegistration(cfg.AllowRegistration),
+		usecase.WithPasswordChange(userRepo),
 	)
 	userUseCase := usecase.NewUserUseCase(userRepo)
 	stockMovementUseCase := usecase.NewStockMovementUseCase(productRepo, stockMovementRepo)

@@ -9,7 +9,7 @@ The project provides product and inventory management, user authentication, role
 | Component | Technology |
 |---|---|
 | Language | Go |
-| HTTP server and routing | Go standard library (`net/http`) |
+| HTTP server and routing | Go standard library (`net/http`) server, [chi](https://github.com/go-chi/chi) v5 router |
 | Database | PostgreSQL 17 |
 | Database access | `database/sql` |
 | PostgreSQL driver | pgx v5 |
@@ -47,7 +47,7 @@ The project provides product and inventory management, user authentication, role
 - Retrieve user details.
 - Update user information and roles.
 - Restrict user-management operations to administrators.
-- Provide a CLI command to create the first administrator.
+- Provide a server-side `gostock admin` command to create an administrator or reset an administrator's password.
 
 ### Application and security configuration
 
@@ -99,9 +99,6 @@ The dependency direction keeps business logic independent of HTTP and PostgreSQL
 ```text
 gostock/
 ├── backend/
-│   ├── cmd/
-│   │   └── createadmin/
-│   │       └── main.go
 │   ├── config/
 │   │   ├── config.go
 │   │   ├── config_test.go
@@ -114,7 +111,6 @@ gostock/
 │   │   ├── domain/
 │   │   ├── handle/
 │   │   │   └── http/
-│   │   │       ├── response/
 │   │   │       └── ... handlers and middleware
 │   │   ├── platform/
 │   │   │   ├── database/
@@ -123,6 +119,8 @@ gostock/
 │   │   │   └── postgres/
 │   │   └── usecase/
 │   ├── migrations/
+│   ├── pkg/
+│   │   └── response/
 │   ├── main.go
 │   ├── go.mod
 │   └── go.sum
@@ -148,13 +146,35 @@ All application endpoints use the `/api/v1` prefix, except for health and readin
 
 | Method | Endpoint | Description | Authentication |
 |---|---|---|---|
-| POST | `/api/v1/auth/register` | Register a new user | Public |
+| POST | `/api/v1/auth/register` | Register a new user; only when `ALLOW_REGISTRATION=true`, otherwise `403 REGISTRATION_DISABLED` | Public |
 | POST | `/api/v1/auth/login` | Log in | Public |
 | POST | `/api/v1/auth/refresh` | Refresh authentication tokens | Refresh cookie |
 | POST | `/api/v1/auth/logout` | Log out and revoke refresh token | Refresh cookie |
 | GET | `/api/v1/auth/me` | Get the authenticated user | Authenticated |
+| POST | `/api/v1/auth/change-password` | Change the authenticated user's own password | Authenticated (any role) |
 
 Access and refresh tokens are delivered through HttpOnly cookies. The access token is a JWT; refresh tokens are persisted to support rotation and revocation.
+
+#### Change password
+
+`POST /api/v1/auth/change-password` with `Content-Type: application/json`:
+
+```json
+{ "current_password": "the current password", "new_password": "the new password" }
+```
+
+The new password follows the registration rules (8 to 72 bytes) and must differ from the current one. On success the response is `200` with `{"success":true,"message":"password changed","data":null}`; the new password hash is stored and **every refresh token of the user is revoked** in one transaction, and both auth cookies are cleared as on logout, so every session of the user (on every device) must log in again with the new password.
+
+| Status | Code | When |
+|---|---|---|
+| 400 | `INVALID_CURRENT_PASSWORD` | `current_password` is wrong. It is not a 401, so the frontend does not try to refresh the session |
+| 400 | `PASSWORD_UNCHANGED` | `new_password` equals the current password |
+| 400 | `INVALID_PASSWORD` | `new_password` is shorter than 8 or longer than 72 bytes |
+| 400 | `VALIDATION_ERROR` | Malformed JSON, an unknown field or more than one JSON object |
+| 401 | `UNAUTHENTICATED` | No valid access token |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | `Content-Type` is not `application/json` |
+
+A refused change keeps the session and its cookies. Known limitation: an access token issued before the change stays valid until it expires, at most 15 minutes (`ACCESS_TOKEN_TTL_MINUTES`), because access tokens are stateless JWTs that are not checked against the database; only the refresh tokens are revoked at once.
 
 ### Products and inventory
 
@@ -339,25 +359,46 @@ Only drop the table manually when using a disposable database and after verifyin
 
 ### 5. Create the first administrator
 
-Newly registered accounts receive the `user` role.
+Newly registered accounts receive the `user` role. Administrators are created, and their passwords reset, with the `admin` command of the backend binary. It runs on the server only; there is no HTTP API for it.
 
-Create the first administrator from the `backend` directory:
-
-```bash
-go run ./cmd/createadmin
+```text
+gostock admin create --email <email>           # create an admin account
+gostock admin reset-password --email <email>   # set a new password for an admin account and revoke its sessions
+gostock admin --help                           # usage
 ```
 
-The command requires `DATABASE_URL` and an initialized database.
+From the `backend` directory with the Go toolchain:
 
-It interactively prompts for:
+```bash
+go run . admin create --email admin@example.com
+```
 
-- Email address.
-- Password.
-- Password confirmation.
+With a built binary (`go build -o gostock .`), or inside the container that runs it (replace `<container>` and the binary path with those of your deployment):
 
-The password is not echoed in the terminal. Passwords must be between 8 and 72 bytes.
+```bash
+./gostock admin reset-password --email admin@example.com
+docker exec -it <container> /path/to/gostock admin reset-password --email admin@example.com
+```
 
-The command fails if the email address is already registered.
+The command requires `DATABASE_URL` and an initialized database. When `EXPECTED_DATABASE_NAME` is set, it checks `current_database()` like the server and stops before asking for the password if it is connected to another database.
+
+**The password is read from standard input only.** It is never accepted as a command-line argument or an environment variable: a password there would end up in the shell history, the process list or the container configuration. The command rejects any extra argument.
+
+- In a terminal (`docker exec -it`), it asks for the password twice without echo; both entries must match.
+- Without a terminal, it reads the first line of standard input and drops its line ending (`\n` or `\r\n`). Pipe it from a secret store or a protected file, never from `echo` with the password typed on the command line:
+
+```bash
+go run . admin create --email admin@example.com < /run/secrets/gostock_admin_password
+docker exec -i <container> /path/to/gostock admin create --email admin@example.com < admin-password.txt
+```
+
+Passwords must be between 8 and 72 bytes. The command prints only the email address on success, never the password or its hash.
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Success (or `--help`) |
+| `1` | The command failed: invalid email or password, email already registered, account not found, account not an admin, passwords not matching, empty password, database or preflight error |
+| `2` | Invalid command line: unknown subcommand, missing `--email`, unknown flag or extra argument |
 
 ### 6. Start the API
 
@@ -378,7 +419,7 @@ The application initializes its dependencies, connects to PostgreSQL, starts the
 | Variable | Required | Description |
 |---|---|---|
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `EXPECTED_DATABASE_NAME` | No | When set, the API server, `createadmin` and `resetadmin` check `current_database()` on their own connection right after connecting and stop if it differs, before serving requests or asking for credentials. If set, it must not be empty or have leading or trailing whitespace |
+| `EXPECTED_DATABASE_NAME` | No | When set, the API server and the `gostock admin` command check `current_database()` on their own connection right after connecting and stop if it differs, before serving requests or asking for credentials. If set, it must not be empty or have leading or trailing whitespace |
 | `APP_ENV` | No | Application environment; defaults to `development` |
 | `ENV` | No | Fallback environment variable when `APP_ENV` is unset |
 | `HTTP_PORT` | No | HTTP port; defaults to `8080` |
@@ -388,7 +429,8 @@ The application initializes its dependencies, connects to PostgreSQL, starts the
 | `ACCESS_TOKEN_TTL_MINUTES` | No | Access token lifetime; defaults to 15 minutes |
 | `REFRESH_TOKEN_TTL_DAYS` | No | Refresh token lifetime; defaults to 7 days |
 | `REFRESH_TOKEN_GRACE_PERIOD` | No | Refresh-token rotation grace period; defaults to 15 seconds |
-| `COOKIE_SECURE` | No | Whether authentication cookies require HTTPS |
+| `COOKIE_SECURE` | No | Whether authentication cookies require HTTPS. Defaults to `false` only when `APP_ENV` is `development` (the default), `dev` or `test`, and to `true` in every other environment (`staging`, `production`, `prod`). `false` is rejected in `production` and `prod` |
+| `ALLOW_REGISTRATION` | No | Whether `POST /api/v1/auth/register` may create accounts: `true` or `false`, defaults to `false`. Any other value stops startup. When `false`, the endpoint answers `403 REGISTRATION_DISABLED`; administrators are created with `gostock admin create` |
 | `COOKIE_SAMESITE` | No | Cookie SameSite policy: `lax`, `strict`, or `none` |
 | `CORS_ALLOWED_ORIGINS` | Conditional | Comma-separated list of allowed browser origins |
 
@@ -416,14 +458,29 @@ openssl rand -base64 48
 
 - The JWT secret must contain at least 32 bytes.
 - Deployed CORS origins must use HTTPS and must not contain wildcard hosts.
-- Production requires secure cookies.
-- `COOKIE_SAMESITE=none` requires `COOKIE_SECURE=true`.
+- Authentication cookies are `Secure` by default. Only the local environments (`development`, `dev`, `test`) default to `Secure=false`, so the API works over plain HTTP on localhost. `COOKIE_SECURE` overrides the default.
+
+| `APP_ENV` | `COOKIE_SECURE` unset | `COOKIE_SECURE=true` | `COOKIE_SECURE=false` |
+|---|---|---|---|
+| `development` (default), `dev`, `test` | `Secure=false` | `Secure=true` | `Secure=false` |
+| `staging` | `Secure=true` | `Secure=true` | `Secure=false` |
+| `production`, `prod` | `Secure=true` | `Secure=true` | startup error |
+
+- `COOKIE_SAMESITE=none` requires `Secure=true`, whether it comes from the default or from `COOKIE_SECURE`; otherwise startup fails.
+- Self-registration is off unless `ALLOW_REGISTRATION=true`.
 
 These defaults are intended for local development only. Configure explicit secrets, origins, and cookie settings before deployment.
 
 ## API Response Format
 
-The API uses a standardized response envelope.
+The API uses a standardized response envelope, written by the shared package `backend/pkg/response`:
+
+| Field | Type | Present | Meaning |
+| --- | --- | --- | --- |
+| `success` | boolean | always | `true` for 2xx responses, `false` for errors |
+| `code` | string | errors only | Machine-readable error code in `UPPER_SNAKE_CASE`; never present on success |
+| `message` | string | always | Human-readable message; do not compare it in client code, use `code` |
+| `data` | any | always | Payload; `null` on most errors, `{"fields": {...}}` on validation errors |
 
 Successful response example:
 
@@ -444,14 +501,72 @@ Error response example:
 ```json
 {
   "success": false,
+  "code": "PRODUCT_NOT_FOUND",
   "message": "Product not found",
   "data": null
 }
 ```
 
+Validation error example (query parameters of the dashboard):
+
+```json
+{
+  "success": false,
+  "code": "VALIDATION_ERROR",
+  "message": "invalid query parameters",
+  "data": { "fields": { "tz": "must be an IANA time zone name" } }
+}
+```
+
 Paginated responses include pagination metadata inside `data`.
 
-HTTP status codes are used to distinguish successful requests, validation errors, authentication failures, authorization failures, missing resources, and internal errors.
+HTTP status codes are used to distinguish successful requests, validation errors, authentication failures, authorization failures, missing resources, and internal errors. Within a status, `code` tells the cases apart.
+
+### Error codes
+
+General codes, used when an error has no more specific code:
+
+| Code | HTTP | When |
+| --- | --- | --- |
+| `VALIDATION_ERROR` | 400 | Invalid request: malformed or extra JSON, a field rejected by the handler, or invalid query parameters (details in `data.fields`) |
+| `UNAUTHENTICATED` | 401 | No valid access token (`authentication required`, `invalid or expired token`), no refresh cookie (`refresh token required`), or the authenticated user no longer exists |
+| `FORBIDDEN` | 403 | Role not allowed (`forbidden: admin role required`) or cross-origin request rejected |
+| `NOT_FOUND` | 404 | Resource not found, when no specific code applies |
+| `METHOD_NOT_ALLOWED` | 405 | HTTP method not supported by the route; the `Allow` header lists the allowed methods |
+| `CONFLICT` | 409 | Conflict, when no specific code applies |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 | `Content-Type` is not `application/json` |
+| `INTERNAL_ERROR` | 500 | Unexpected server error; the cause is logged, never returned |
+| `SERVICE_UNAVAILABLE` | 503 | Readiness probe cannot reach the database |
+
+Specific codes:
+
+| Code | HTTP | Message |
+| --- | --- | --- |
+| `INVALID_PRODUCT_ID` | 400 | `invalid product ID` |
+| `INVALID_PRODUCT` | 400 | `Invalid product` |
+| `INVALID_QUANTITY` | 400 | `quantity must be greater than 0` |
+| `INVALID_USER_ID` | 400 | `invalid user ID` |
+| `INVALID_USER` | 400 | `invalid user` |
+| `INVALID_USER_ROLE` | 400 | `invalid user role` |
+| `EMPTY_UPDATE` | 400 | `at least one field must be provided for update` |
+| `INVALID_PAGE` | 400 | `invalid page` |
+| `INVALID_LIMIT` | 400 | `invalid limit` |
+| `INVALID_EMAIL` | 400 | `invalid email` |
+| `INVALID_PASSWORD` | 400 | `invalid password` |
+| `INVALID_CURRENT_PASSWORD` | 400 | `current password is incorrect` (change-password) |
+| `PASSWORD_UNCHANGED` | 400 | `new password must differ from the current password` (change-password) |
+| `INVALID_CREDENTIALS` | 401 | `invalid email or password` |
+| `INVALID_SESSION` | 401 | `invalid or expired session` |
+| `INVALID_REFRESH_TOKEN` | 401 | `invalid or expired refresh token` (one code for unknown, revoked, expired and reused tokens) |
+| `REGISTRATION_DISABLED` | 403 | `registration is disabled` (`ALLOW_REGISTRATION` is not `true`) |
+| `PRODUCT_NOT_FOUND` | 404 | `Product not found` |
+| `USER_NOT_FOUND` | 404 | `user not found` |
+| `SKU_EXISTS` | 409 | `SKU already exists` |
+| `EMAIL_EXISTS` | 409 | `email already exists` |
+| `INSUFFICIENT_STOCK` | 409 | `Insufficient stock` |
+| `CONCURRENT_REFRESH` | 409 | `concurrent refresh in progress` |
+
+Codes are assigned in the HTTP layer (`MapError` in `backend/internal/handle/http/error_mapper.go` and the handlers), never in use cases. A message always comes with the same code.
 
 ## Testing
 
@@ -571,7 +686,7 @@ Manual UI testing uses a separate database, `gostock_ui_test`. It is never the d
 DATABASE_URL="${GOSTOCK_UI_DATABASE_URL:?not set}" EXPECTED_DATABASE_NAME=gostock_ui_test go run .
 ```
 
-On success the server logs `database preflight passed` with the database name. On any other database it exits with `database preflight: connected to "…", expected "gostock_ui_test"` before opening its HTTP port. Use the same two variables for `go run ./cmd/createadmin` and `go run ./cmd/resetadmin`.
+On success the server logs `database preflight passed` with the database name. On any other database it exits with `database preflight: connected to "…", expected "gostock_ui_test"` before opening its HTTP port. Use the same two variables for `go run . admin create` and `go run . admin reset-password`.
 
 ## Current Scope and Future Improvements
 

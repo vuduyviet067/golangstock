@@ -17,8 +17,6 @@ import (
 // only because ChartResponse contains it.
 const (
 	guardDTO = "package dto\n" +
-		"type APIResponse struct{ Success bool; Data any }\n" +
-		"type PaginatedData struct{ Items any }\n" +
 		"type ProductResponse struct{ ID int64 }\n" +
 		"type ChartResponse struct{ Points []ChartPoint }\n" +
 		"type ChartPoint struct{ Period string }\n" +
@@ -131,10 +129,10 @@ func TestHandlerResponseConstructionGuard(t *testing.T) {
 			"func f() { var req dto.CreateProductRequest; _ = req; _ = dto.ChartQuery{From: \"x\"} }\n")},
 		{name: "passing a use case DTO through", files: handlerFiles(dtoImportLine +
 			"func f(p dto.ProductResponse) any { return p }\n")},
-		{name: "envelope types are not response mapping", files: handlerFiles(dtoImportLine +
-			"func f() { _ = dto.APIResponse{Success: true}; _ = dto.PaginatedData{} }\n")},
+		{name: "envelope types of pkg/response are not response DTOs", files: handlerFiles("import \"gostock/pkg/response\"\n" +
+			"func f() { _ = response.APIResponse{Success: true}; _ = response.PaginatedData{} }\n")},
 		{name: "response helper builds envelopes", files: withFiles(handlerFiles(""), map[string]string{
-			"internal/handle/http/response/r.go": "package response\n" + dtoImportLine + "func f() { _ = dto.APIResponse{} }\n",
+			"pkg/response/r.go": "package response\ntype APIResponse struct{ Success bool }\nfunc f() { _ = APIResponse{} }\n",
 		})},
 		{name: "handler tests may build DTOs", files: withFiles(handlerFiles(""), map[string]string{
 			"internal/handle/http/h_test.go": "package http\n" + dtoImportLine + "func f() { _ = dto.ProductResponse{} }\n",
@@ -163,6 +161,12 @@ func TestHandlerResponseConstructionGuard(t *testing.T) {
 			"func f() { var r dto.ProductResponse; r.ID = 1; _ = r }\n"), want: []string{"handler declares a variable of a response DTO"}},
 		{name: "conversion", files: handlerFiles(dtoImportLine +
 			"type view struct{ ID int64 }\nfunc f(v view) { _ = dto.ProductResponse(v) }\n"), want: []string{"handler converts to a response DTO"}},
+		// The envelope exception is gone: an envelope put back in dto is a
+		// response DTO like any other *Response type.
+		{name: "envelope declared in dto again", files: withFiles(handlerFiles(dtoImportLine+
+			"func f() { _ = dto.APIResponse{Success: true} }\n"), map[string]string{
+			"internal/dto/envelope.go": "package dto\ntype APIResponse struct{ Success bool }\n",
+		}), want: []string{"h.go:3:16: handler builds a response DTO"}},
 	}, check)
 }
 

@@ -11,9 +11,8 @@ import (
 	"time"
 
 	"gostock/internal/domain"
-	"gostock/internal/dto"
-	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
+	"gostock/pkg/response"
 )
 
 func TestEnforceJSONContentType(t *testing.T) {
@@ -32,7 +31,7 @@ func TestEnforceJSONContentType(t *testing.T) {
 
 	t.Run("Valid application/json", func(t *testing.T) {
 		reset()
-		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{"key":"value"}`))
+		req := newRequest(http.MethodPost, "/test", strings.NewReader(`{"key":"value"}`))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 
@@ -48,7 +47,7 @@ func TestEnforceJSONContentType(t *testing.T) {
 
 	t.Run("Valid application/json; charset=utf-8", func(t *testing.T) {
 		reset()
-		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{"key":"value"}`))
+		req := newRequest(http.MethodPost, "/test", strings.NewReader(`{"key":"value"}`))
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
 		rec := httptest.NewRecorder()
 
@@ -64,7 +63,7 @@ func TestEnforceJSONContentType(t *testing.T) {
 
 	t.Run("Missing Content-Type rejected with 415", func(t *testing.T) {
 		reset()
-		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{"key":"value"}`))
+		req := newRequest(http.MethodPost, "/test", strings.NewReader(`{"key":"value"}`))
 		rec := httptest.NewRecorder()
 
 		testHandler.ServeHTTP(rec, req)
@@ -76,7 +75,7 @@ func TestEnforceJSONContentType(t *testing.T) {
 			t.Fatalf("expected 415 Unsupported Media Type, got %d", rec.Code)
 		}
 
-		var resp dto.APIResponse
+		var resp response.APIResponse
 		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("failed to decode JSON response: %v", err)
 		}
@@ -90,7 +89,7 @@ func TestEnforceJSONContentType(t *testing.T) {
 
 	t.Run("text/plain rejected with 415", func(t *testing.T) {
 		reset()
-		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{"key":"value"}`))
+		req := newRequest(http.MethodPost, "/test", strings.NewReader(`{"key":"value"}`))
 		req.Header.Set("Content-Type", "text/plain")
 		rec := httptest.NewRecorder()
 
@@ -106,7 +105,7 @@ func TestEnforceJSONContentType(t *testing.T) {
 
 	t.Run("application/x-www-form-urlencoded rejected with 415", func(t *testing.T) {
 		reset()
-		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`key=value`))
+		req := newRequest(http.MethodPost, "/test", strings.NewReader(`key=value`))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 
@@ -165,7 +164,7 @@ func TestHandlers_ContentMediaTypeValidation(t *testing.T) {
 		uc := usecase.NewProductUseCase(repo)
 		handler := NewProductHandler(uc)
 
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/products", strings.NewReader(`{"sku":"TEST-1","name":"Test","price":10,"quantity":5}`))
+		req := newRequest(http.MethodPost, "/api/v1/products", strings.NewReader(`{"sku":"TEST-1","name":"Test","price":10,"quantity":5}`))
 		req.Header.Set("Content-Type", "text/plain")
 		rec := httptest.NewRecorder()
 
@@ -184,7 +183,7 @@ func TestHandlers_ContentMediaTypeValidation(t *testing.T) {
 		uc := usecase.NewProductUseCase(repo)
 		handler := NewProductHandler(uc)
 
-		req := httptest.NewRequest(http.MethodPut, "/api/v1/products/1", strings.NewReader(`{"name":"Updated"}`))
+		req := newRequest(http.MethodPut, "/api/v1/products/1", strings.NewReader(`{"name":"Updated"}`))
 		rec := httptest.NewRecorder()
 
 		handler.Update(rec, req)
@@ -202,7 +201,7 @@ func TestHandlers_ContentMediaTypeValidation(t *testing.T) {
 		uc := usecase.NewProductUseCase(repo)
 		handler := NewProductHandler(uc)
 
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/products/1/stock-in", strings.NewReader(`{"quantity":5}`))
+		req := newRequest(http.MethodPost, "/api/v1/products/1/stock-in", strings.NewReader(`{"quantity":5}`))
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
 		rec := httptest.NewRecorder()
 
@@ -221,7 +220,7 @@ func TestHandlers_ContentMediaTypeValidation(t *testing.T) {
 		rRepo := &mockRefreshRepo{}
 		handler := setupTestAuthHandler(uRepo, rRepo)
 
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader([]byte(`{"email":"user@example.com","password":"password123"}`)))
+		req := newRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader([]byte(`{"email":"user@example.com","password":"password123"}`)))
 		rec := httptest.NewRecorder()
 
 		handler.Login(rec, req)
@@ -236,7 +235,7 @@ func TestHandlers_ContentMediaTypeValidation(t *testing.T) {
 		rRepo := &mockRefreshRepo{}
 		handler := setupTestAuthHandler(uRepo, rRepo)
 
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader([]byte(`{"email":"user@example.com","password":"password123"}`)))
+		req := newRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader([]byte(`{"email":"user@example.com","password":"password123"}`)))
 		req.Header.Set("Content-Type", "text/plain")
 		rec := httptest.NewRecorder()
 
@@ -251,7 +250,7 @@ func TestHandlers_ContentMediaTypeValidation(t *testing.T) {
 		repo := &mockUserRepoForHandler{}
 		handler := setupUserHandler(repo)
 
-		req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/1", strings.NewReader("email=new@example.com"))
+		req := newRequest(http.MethodPatch, "/api/v1/users/1", strings.NewReader("email=new@example.com"))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 
@@ -267,7 +266,7 @@ func TestHandlers_ContentMediaTypeValidation(t *testing.T) {
 		rRepo := &mockRefreshRepo{}
 		handler := setupTestAuthHandler(uRepo, rRepo)
 
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+		req := newRequest(http.MethodPost, "/api/v1/auth/logout", nil)
 		rec := httptest.NewRecorder()
 
 		handler.Logout(rec, req)
@@ -286,7 +285,7 @@ func TestHandlers_ContentMediaTypeValidation(t *testing.T) {
 		}
 		handler := setupTestAuthHandler(uRepo, rRepo)
 
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
+		req := newRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
 		req.AddCookie(&http.Cookie{Name: RefreshTokenCookieName, Value: "active-token"})
 		rec := httptest.NewRecorder()
 
@@ -301,7 +300,7 @@ func TestHandlers_ContentMediaTypeValidation(t *testing.T) {
 		repo := &fakeProductRepository{}
 		handler := newTestHandler(repo)
 
-		req := httptest.NewRequest(http.MethodDelete, "/api/v1/products/1", nil)
+		req := newRequest(http.MethodDelete, "/api/v1/products/1", nil)
 		rec := httptest.NewRecorder()
 
 		handler.Delete(rec, req)

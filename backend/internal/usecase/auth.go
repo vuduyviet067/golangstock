@@ -24,6 +24,14 @@ var (
 	ErrInvalidPassword    = errors.New("invalid password")
 	ErrInvalidSession     = errors.New("invalid session")
 	ErrInvalidTokenTTL    = errors.New("token TTLs must be positive")
+
+	// ErrRegistrationDisabled: self-registration is off (ALLOW_REGISTRATION).
+	ErrRegistrationDisabled = errors.New("registration is disabled")
+
+	// ChangePassword: the current password given is wrong, or the new
+	// password is the current one.
+	ErrInvalidCurrentPassword = errors.New("current password is incorrect")
+	ErrPasswordUnchanged      = errors.New("new password must differ from the current password")
 )
 
 const (
@@ -45,6 +53,22 @@ type AuthUseCase struct {
 	accessTokenTTL      time.Duration
 	refreshTokenTTL     time.Duration
 	rotationGracePeriod time.Duration
+	registrationAllowed bool
+	passwordChange      repository.PasswordChangeRepository
+}
+
+// AuthOption configures an AuthUseCase.
+type AuthOption func(*AuthUseCase)
+
+// WithRegistration sets whether Register may create accounts. Without it,
+// registration is disabled and Register returns ErrRegistrationDisabled.
+func WithRegistration(allowed bool) AuthOption {
+	return func(uc *AuthUseCase) { uc.registrationAllowed = allowed }
+}
+
+// WithPasswordChange sets the repository ChangePassword writes with.
+func WithPasswordChange(repo repository.PasswordChangeRepository) AuthOption {
+	return func(uc *AuthUseCase) { uc.passwordChange = repo }
 }
 
 func NewAuthUseCase(
@@ -54,11 +78,12 @@ func NewAuthUseCase(
 	accessTokenTTL time.Duration,
 	refreshTokenTTL time.Duration,
 	rotationGracePeriod time.Duration,
+	opts ...AuthOption,
 ) *AuthUseCase {
 	if rotationGracePeriod < 0 {
 		rotationGracePeriod = 15 * time.Second
 	}
-	return &AuthUseCase{
+	uc := &AuthUseCase{
 		users:               users,
 		refreshTokens:       refreshTokens,
 		tokenManager:        tokenManager,
@@ -66,6 +91,10 @@ func NewAuthUseCase(
 		refreshTokenTTL:     refreshTokenTTL,
 		rotationGracePeriod: rotationGracePeriod,
 	}
+	for _, opt := range opts {
+		opt(uc)
+	}
+	return uc
 }
 
 // Register creates a user with the default role and returns it as the auth
@@ -76,6 +105,11 @@ func (uc *AuthUseCase) Register(
 	email string,
 	password string,
 ) (dto.AuthUserResponse, error) {
+	// Checked first: with registration off, the input is not examined.
+	if !uc.registrationAllowed {
+		return dto.AuthUserResponse{}, ErrRegistrationDisabled
+	}
+
 	email = strings.ToLower(strings.TrimSpace(email))
 
 	if !isValidEmail(email) {
@@ -395,4 +429,56 @@ func (uc *AuthUseCase) Me(principal domain.User) dto.AuthUserResponse {
 // does not depend on its result.
 func (uc *AuthUseCase) LogoutResponse() dto.MessageResponse {
 	return mapper.ToLogoutResponse()
+}
+
+// ChangePassword lets the authenticated user userID replace their password.
+// The current password must match (ErrInvalidCurrentPassword); the new one
+// follows the registration length rules (ErrInvalidPassword) and must differ
+// from the current one (ErrPasswordUnchanged). On success the new hash is
+// stored and every refresh token of the user is revoked in one repository
+// operation. A user that no longer exists is ErrInvalidActor.
+func (uc *AuthUseCase) ChangePassword(ctx context.Context, userID int64, currentPassword, newPassword string) error {
+	if userID <= 0 {
+		return ErrInvalidActor
+	}
+
+	user, err := uc.users.GetByID(ctx, userID)
+	err = fromRepository(err)
+	if errors.Is(err, ErrUserNotFound) {
+		return ErrInvalidActor
+	}
+	if err != nil {
+		return fmt.Errorf("find user: %w", err)
+	}
+	if user == nil {
+		return errors.New("user repository returned nil user without error")
+	}
+
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(currentPassword)) != nil {
+		return ErrInvalidCurrentPassword
+	}
+	if len(newPassword) < passwordMinLen || len(newPassword) > passwordMaxLen {
+		return ErrInvalidPassword
+	}
+	// The current password is verified, so comparing the strings is enough.
+	if newPassword == currentPassword {
+		return ErrPasswordUnchanged
+	}
+
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	if uc.passwordChange == nil {
+		return errors.New("password change repository is not configured")
+	}
+	err = fromRepository(uc.passwordChange.UpdateOwnPasswordAndRevokeTokens(ctx, userID, string(passwordHash), time.Now().UTC()))
+	if errors.Is(err, ErrUserNotFound) {
+		return ErrInvalidActor
+	}
+	if err != nil {
+		return fmt.Errorf("change password: %w", err)
+	}
+	return nil
 }

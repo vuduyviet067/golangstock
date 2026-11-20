@@ -4,8 +4,8 @@ import (
 	"net/http"
 
 	"gostock/internal/dto"
-	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
+	"gostock/pkg/response"
 )
 
 // DashboardHandler serves the read-only dashboard figures.
@@ -21,12 +21,6 @@ func NewDashboardHandler(uc *usecase.DashboardUseCase) *DashboardHandler {
 
 // Summary serves GET /api/v1/dashboard/summary.
 func (h *DashboardHandler) Summary(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	summary, err := h.useCase.Summary(r.Context())
 	if err != nil {
 		WriteError(w, r, err)
@@ -39,12 +33,6 @@ func (h *DashboardHandler) Summary(w http.ResponseWriter, r *http.Request) {
 // StockMovementChart serves GET /api/v1/dashboard/stock-movements with the
 // optional query parameters from, to, granularity and tz.
 func (h *DashboardHandler) StockMovementChart(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	query := r.URL.Query()
 	chart, err := h.useCase.StockMovementChart(r.Context(), dto.StockMovementChartQuery{
 		From:        query.Get("from"),

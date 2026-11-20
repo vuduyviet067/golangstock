@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"gostock/internal/dto"
+	"gostock/pkg/response"
 )
 
 // testAllowedOrigins is a canonical allowlist, as config.Load would produce it.
@@ -84,7 +84,7 @@ func assertForbiddenEnvelope(t *testing.T, rec *httptest.ResponseRecorder) {
 	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
 		t.Errorf("Content-Type = %q, want application/json", ct)
 	}
-	var resp dto.APIResponse
+	var resp response.APIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode error envelope: %v (body %q)", err, rec.Body.String())
 	}

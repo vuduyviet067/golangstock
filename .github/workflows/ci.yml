@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
+    branches: [master]
   pull_request:
+    branches: [master]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -34,7 +37,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d gostock_test"
+          --health-cmd "pg_isready -h localhost -U postgres -d gostock_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20

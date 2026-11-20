@@ -9,8 +9,8 @@ import (
 	"unicode"
 
 	"gostock/internal/dto"
-	"gostock/internal/handle/http/response"
 	"gostock/internal/usecase"
+	"gostock/pkg/response"
 )
 
 // invalidQueryMessage is the message of 400 responses for invalid query
@@ -21,6 +21,7 @@ const invalidQueryMessage = "invalid query parameters"
 func NewValidationError(message string, fields map[string]string, cause error) *dto.HTTPError {
 	return &dto.HTTPError{
 		StatusCode: http.StatusBadRequest,
+		Code:       response.CodeValidationError,
 		Message:    message,
 		Fields:     fields,
 		Cause:      cause,
@@ -44,27 +45,31 @@ func MapError(err error) *dto.HTTPError {
 	switch {
 	// 400 Bad Request — Client input / validation errors
 	case errors.Is(err, usecase.ErrInvalidID):
-		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Message: "invalid product ID", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidProductID, Message: "invalid product ID", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidUserID):
-		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Message: "invalid user ID", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidUserID, Message: "invalid user ID", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidUserRole):
-		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Message: "invalid user role", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidUserRole, Message: "invalid user role", Cause: err}
 	case errors.Is(err, usecase.ErrEmptyUpdate):
-		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Message: "at least one field must be provided for update", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeEmptyUpdate, Message: "at least one field must be provided for update", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidUser):
-		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Message: "invalid user", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidUser, Message: "invalid user", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidPage):
-		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Message: "invalid page", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidPage, Message: "invalid page", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidLimit):
-		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Message: "invalid limit", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidLimit, Message: "invalid limit", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidProduct):
-		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Message: "Invalid product", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidProduct, Message: "Invalid product", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidQuantity):
-		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Message: "quantity must be greater than 0", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidQuantity, Message: "quantity must be greater than 0", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidEmail):
-		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Message: "invalid email", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidEmail, Message: "invalid email", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidPassword):
-		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Message: "invalid password", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidPassword, Message: "invalid password", Cause: err}
+	case errors.Is(err, usecase.ErrInvalidCurrentPassword):
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codeInvalidCurrentPassword, Message: "current password is incorrect", Cause: err}
+	case errors.Is(err, usecase.ErrPasswordUnchanged):
+		return &dto.HTTPError{StatusCode: http.StatusBadRequest, Code: codePasswordUnchanged, Message: "new password must differ from the current password", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidChartFrom):
 		return NewValidationError(invalidQueryMessage, map[string]string{"from": "must be a date in YYYY-MM-DD format"}, err)
 	case errors.Is(err, usecase.ErrInvalidChartTo):
@@ -80,44 +85,49 @@ func MapError(err error) *dto.HTTPError {
 
 	// 401 Unauthorized — Authentication credentials / Session / Refresh token errors
 	case errors.Is(err, usecase.ErrInvalidCredentials):
-		return &dto.HTTPError{StatusCode: http.StatusUnauthorized, Message: "invalid email or password", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusUnauthorized, Code: codeInvalidCredentials, Message: "invalid email or password", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidSession):
-		return &dto.HTTPError{StatusCode: http.StatusUnauthorized, Message: "invalid or expired session", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusUnauthorized, Code: codeInvalidSession, Message: "invalid or expired session", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidActor):
-		// The authenticated user is missing or no longer exists.
-		return &dto.HTTPError{StatusCode: http.StatusUnauthorized, Message: "authentication required", Cause: err}
+		// The authenticated user is missing or no longer exists. Same message
+		// and code as AuthMiddleware without a principal.
+		return &dto.HTTPError{StatusCode: http.StatusUnauthorized, Code: response.CodeUnauthenticated, Message: "authentication required", Cause: err}
 	case errors.Is(err, usecase.ErrInvalidRefreshToken),
 		errors.Is(err, usecase.ErrRefreshTokenNotFound),
 		errors.Is(err, usecase.ErrRefreshTokenRevoked),
 		errors.Is(err, usecase.ErrRefreshTokenExpired),
 		errors.Is(err, usecase.ErrRefreshTokenReused):
-		return &dto.HTTPError{StatusCode: http.StatusUnauthorized, Message: "invalid or expired refresh token", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusUnauthorized, Code: codeInvalidRefreshToken, Message: "invalid or expired refresh token", Cause: err}
+
+	// 403 Forbidden — Self-registration is turned off (ALLOW_REGISTRATION)
+	case errors.Is(err, usecase.ErrRegistrationDisabled):
+		return &dto.HTTPError{StatusCode: http.StatusForbidden, Code: codeRegistrationDisabled, Message: "registration is disabled", Cause: err}
 
 	// 404 Not Found — Resource not found
 	case errors.Is(err, usecase.ErrProductNotFound):
-		return &dto.HTTPError{StatusCode: http.StatusNotFound, Message: "Product not found", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusNotFound, Code: codeProductNotFound, Message: "Product not found", Cause: err}
 	case errors.Is(err, usecase.ErrUserNotFound):
 		// Note: In auth flows (Login/Refresh), usecase.ErrUserNotFound is already translated by
 		// AuthUseCase into ErrInvalidCredentials / ErrInvalidSession (401). If ErrUserNotFound
 		// reaches the HTTP layer in user-management/resource endpoints, it indicates 404 Not Found.
-		return &dto.HTTPError{StatusCode: http.StatusNotFound, Message: "user not found", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusNotFound, Code: codeUserNotFound, Message: "user not found", Cause: err}
 
 	// 409 Conflict — Business conflict & concurrent operations
 	case errors.Is(err, usecase.ErrConcurrentRefresh):
-		return &dto.HTTPError{StatusCode: http.StatusConflict, Message: "concurrent refresh in progress", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusConflict, Code: codeConcurrentRefresh, Message: "concurrent refresh in progress", Cause: err}
 	case errors.Is(err, usecase.ErrProductSKUExists):
-		return &dto.HTTPError{StatusCode: http.StatusConflict, Message: "SKU already exists", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusConflict, Code: codeSKUExists, Message: "SKU already exists", Cause: err}
 	case errors.Is(err, usecase.ErrEmailExists):
-		return &dto.HTTPError{StatusCode: http.StatusConflict, Message: "email already exists", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusConflict, Code: codeEmailExists, Message: "email already exists", Cause: err}
 	case errors.Is(err, usecase.ErrInsufficientStock):
-		return &dto.HTTPError{StatusCode: http.StatusConflict, Message: "Insufficient stock", Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusConflict, Code: codeInsufficientStock, Message: "Insufficient stock", Cause: err}
 
 	// 500 Internal Server Error — Server misconfiguration (e.g. non-positive TTL) or infrastructure failure
 	case errors.Is(err, usecase.ErrInvalidTokenTTL):
-		return &dto.HTTPError{StatusCode: http.StatusInternalServerError, Message: response.InternalServerErrorMessage, Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusInternalServerError, Code: response.CodeInternalError, Message: response.InternalServerErrorMessage, Cause: err}
 
 	default:
-		return &dto.HTTPError{StatusCode: http.StatusInternalServerError, Message: response.InternalServerErrorMessage, Cause: err}
+		return &dto.HTTPError{StatusCode: http.StatusInternalServerError, Code: response.CodeInternalError, Message: response.InternalServerErrorMessage, Cause: err}
 	}
 }
 
@@ -168,10 +178,12 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 		slog.ErrorContext(ctx, "internal server error", attrs...)
 	}
 
+	// An HTTPError without a code (one built outside MapError) gets the
+	// general code of its status from the response helper.
 	if len(httpErr.Fields) > 0 {
-		response.ValidationError(w, httpErr.Message, httpErr.Fields)
+		response.ValidationError(w, httpErr.Code, httpErr.Message, httpErr.Fields)
 		return
 	}
 
-	response.Error(w, httpErr.StatusCode, httpErr.Message)
+	response.Error(w, httpErr.StatusCode, httpErr.Code, httpErr.Message)
 }

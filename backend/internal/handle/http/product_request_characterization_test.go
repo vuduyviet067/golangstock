@@ -24,7 +24,7 @@ import (
 
 func TestCreateRequest_RepositoryReceivesNormalizedProduct(t *testing.T) {
 	repo := &fakeProductRepository{createID: 123}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/products", strings.NewReader(
+	req := newRequest(http.MethodPost, "/api/v1/products", strings.NewReader(
 		`{"id":99,"sku":"  SKU010  ","name":" Mouse ","price":25.5,"quantity":3,"minimum_stock":2}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -50,7 +50,7 @@ func TestCreateRequest_RepositoryReceivesNormalizedProduct(t *testing.T) {
 
 func TestUpdateRequest_RepositoryReceivesNormalizedProduct(t *testing.T) {
 	repo := &fakeProductRepository{storedQuantity: 9, storedMinimumStock: 1}
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/products/7", strings.NewReader(
+	req := newRequest(http.MethodPut, "/api/v1/products/7", strings.NewReader(
 		`{"id":99,"sku":" SKU007 ","name":" Keyboard Pro ","price":120.5,"minimum_stock":3}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -86,24 +86,25 @@ func TestCreateRequest_RejectedBeforeRepository(t *testing.T) {
 		withUser    bool
 		wantStatus  int
 		wantMessage string
+		wantCode    string
 	}{
-		{"invalid JSON", http.MethodPost, "application/json", `{"sku":`, true, http.StatusBadRequest, "Invalid JSON request"},
-		{"unknown field", http.MethodPost, "application/json", `{"sku":"SKU001","name":"Keyboard","colour":"red"}`, true, http.StatusBadRequest, "Invalid JSON request"},
-		{"trailing JSON value", http.MethodPost, "application/json", valid + `{}`, true, http.StatusBadRequest, "Request must contain one JSON object"},
-		{"missing content type", http.MethodPost, "", valid, true, http.StatusUnsupportedMediaType, "Content-Type must be application/json"},
-		{"wrong content type", http.MethodPost, "text/plain", valid, true, http.StatusUnsupportedMediaType, "Content-Type must be application/json"},
-		{"wrong method", http.MethodPut, "application/json", valid, true, http.StatusMethodNotAllowed, "method not allowed"},
-		{"no authenticated user", http.MethodPost, "application/json", valid, false, http.StatusUnauthorized, "authentication required"},
+		{"invalid JSON", http.MethodPost, "application/json", `{"sku":`, true, http.StatusBadRequest, "Invalid JSON request", "VALIDATION_ERROR"},
+		{"unknown field", http.MethodPost, "application/json", `{"sku":"SKU001","name":"Keyboard","colour":"red"}`, true, http.StatusBadRequest, "Invalid JSON request", "VALIDATION_ERROR"},
+		{"trailing JSON value", http.MethodPost, "application/json", valid + `{}`, true, http.StatusBadRequest, "Request must contain one JSON object", "VALIDATION_ERROR"},
+		{"missing content type", http.MethodPost, "", valid, true, http.StatusUnsupportedMediaType, "Content-Type must be application/json", "UNSUPPORTED_MEDIA_TYPE"},
+		{"wrong content type", http.MethodPost, "text/plain", valid, true, http.StatusUnsupportedMediaType, "Content-Type must be application/json", "UNSUPPORTED_MEDIA_TYPE"},
+		{"wrong method", http.MethodPut, "application/json", valid, true, http.StatusMethodNotAllowed, "method not allowed", "METHOD_NOT_ALLOWED"},
+		{"no authenticated user", http.MethodPost, "application/json", valid, false, http.StatusUnauthorized, "authentication required", "UNAUTHENTICATED"},
 		// The handler checks the user before the use case validates the
 		// product, so an invalid product without a user is a 401.
-		{"invalid product and no authenticated user", http.MethodPost, "application/json", `{"sku":"  ","name":"Keyboard","price":100}`, false, http.StatusUnauthorized, "authentication required"},
-		{"blank SKU after trimming", http.MethodPost, "application/json", `{"sku":"   ","name":"Keyboard","price":100}`, true, http.StatusBadRequest, "Invalid product"},
-		{"negative quantity", http.MethodPost, "application/json", `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":-1}`, true, http.StatusBadRequest, "Invalid product"},
+		{"invalid product and no authenticated user", http.MethodPost, "application/json", `{"sku":"  ","name":"Keyboard","price":100}`, false, http.StatusUnauthorized, "authentication required", "UNAUTHENTICATED"},
+		{"blank SKU after trimming", http.MethodPost, "application/json", `{"sku":"   ","name":"Keyboard","price":100}`, true, http.StatusBadRequest, "Invalid product", "INVALID_PRODUCT"},
+		{"negative quantity", http.MethodPost, "application/json", `{"sku":"SKU001","name":"Keyboard","price":100,"quantity":-1}`, true, http.StatusBadRequest, "Invalid product", "INVALID_PRODUCT"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &fakeProductRepository{createID: 1}
-			req := httptest.NewRequest(tt.method, "/api/v1/products", strings.NewReader(tt.body))
+			req := newRequest(tt.method, "/api/v1/products", strings.NewReader(tt.body))
 			if tt.contentType != "" {
 				req.Header.Set("Content-Type", tt.contentType)
 			}
@@ -112,9 +113,9 @@ func TestCreateRequest_RejectedBeforeRepository(t *testing.T) {
 			}
 			rec := httptest.NewRecorder()
 
-			newTestHandler(repo).Create(rec, req)
+			serveRoute(rec, req, http.MethodPost, "/api/v1/products", newTestHandler(repo).Create)
 
-			contractAssertResponse(t, rec, tt.wantStatus, `{"success":false,"message":"`+tt.wantMessage+`","data":null}`)
+			contractAssertResponse(t, rec, tt.wantStatus, `{"success":false,"code":"`+tt.wantCode+`","message":"`+tt.wantMessage+`","data":null}`)
 			if repo.stockCalls != 0 || repo.createdProduct != nil {
 				t.Errorf("repository Create was called (%d call(s)) for a rejected request", repo.stockCalls)
 			}
@@ -131,21 +132,22 @@ func TestUpdateRequest_RejectedBeforeRepository(t *testing.T) {
 		body        string
 		wantStatus  int
 		wantMessage string
+		wantCode    string
 	}{
 		// The path ID is checked before the Content-Type.
-		{"invalid ID and no content type", "/api/v1/products/abc", "", valid, http.StatusBadRequest, "invalid product ID"},
-		{"zero ID and wrong content type", "/api/v1/products/0", "text/plain", valid, http.StatusBadRequest, "invalid product ID"},
-		{"missing content type", "/api/v1/products/1", "", valid, http.StatusUnsupportedMediaType, "Content-Type must be application/json"},
-		{"invalid JSON", "/api/v1/products/1", "application/json", `{"sku":`, http.StatusBadRequest, "Invalid JSON request"},
-		{"unknown field", "/api/v1/products/1", "application/json", `{"sku":"SKU001","colour":"red"}`, http.StatusBadRequest, "Invalid JSON request"},
-		{"trailing JSON value", "/api/v1/products/1", "application/json", valid + `{}`, http.StatusBadRequest, "Request must contain one JSON object"},
-		{"blank name after trimming", "/api/v1/products/1", "application/json", `{"sku":"SKU001","name":"   ","price":100}`, http.StatusBadRequest, "Invalid product"},
-		{"negative price", "/api/v1/products/1", "application/json", `{"sku":"SKU001","name":"Keyboard","price":-0.5}`, http.StatusBadRequest, "Invalid product"},
+		{"invalid ID and no content type", "/api/v1/products/abc", "", valid, http.StatusBadRequest, "invalid product ID", "INVALID_PRODUCT_ID"},
+		{"zero ID and wrong content type", "/api/v1/products/0", "text/plain", valid, http.StatusBadRequest, "invalid product ID", "INVALID_PRODUCT_ID"},
+		{"missing content type", "/api/v1/products/1", "", valid, http.StatusUnsupportedMediaType, "Content-Type must be application/json", "UNSUPPORTED_MEDIA_TYPE"},
+		{"invalid JSON", "/api/v1/products/1", "application/json", `{"sku":`, http.StatusBadRequest, "Invalid JSON request", "VALIDATION_ERROR"},
+		{"unknown field", "/api/v1/products/1", "application/json", `{"sku":"SKU001","colour":"red"}`, http.StatusBadRequest, "Invalid JSON request", "VALIDATION_ERROR"},
+		{"trailing JSON value", "/api/v1/products/1", "application/json", valid + `{}`, http.StatusBadRequest, "Request must contain one JSON object", "VALIDATION_ERROR"},
+		{"blank name after trimming", "/api/v1/products/1", "application/json", `{"sku":"SKU001","name":"   ","price":100}`, http.StatusBadRequest, "Invalid product", "INVALID_PRODUCT"},
+		{"negative price", "/api/v1/products/1", "application/json", `{"sku":"SKU001","name":"Keyboard","price":-0.5}`, http.StatusBadRequest, "Invalid product", "INVALID_PRODUCT"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &fakeProductRepository{storedQuantity: 4}
-			req := httptest.NewRequest(http.MethodPut, tt.path, strings.NewReader(tt.body))
+			req := newRequest(http.MethodPut, tt.path, strings.NewReader(tt.body))
 			if tt.contentType != "" {
 				req.Header.Set("Content-Type", tt.contentType)
 			}
@@ -153,7 +155,7 @@ func TestUpdateRequest_RejectedBeforeRepository(t *testing.T) {
 
 			newTestHandler(repo).Update(rec, req)
 
-			contractAssertResponse(t, rec, tt.wantStatus, `{"success":false,"message":"`+tt.wantMessage+`","data":null}`)
+			contractAssertResponse(t, rec, tt.wantStatus, `{"success":false,"code":"`+tt.wantCode+`","message":"`+tt.wantMessage+`","data":null}`)
 			if repo.updatedProduct != nil || repo.updateMinimumStock != nil {
 				t.Errorf("repository Update was called for a rejected request: %+v", repo.updatedProduct)
 			}
