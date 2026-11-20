@@ -414,6 +414,47 @@ Set `HTTP_PORT` to use another valid port.
 
 The application initializes its dependencies, connects to PostgreSQL, starts the HTTP server, and handles graceful shutdown signals.
 
+### 7. Serve the frontend from the API (single address)
+
+For a deployment, the API server can also serve the built frontend, so the application and its API share one address. The authentication cookies (`SameSite=Lax`) then work without any cross-site configuration.
+
+Build the frontend from `frontend/`:
+
+```bash
+npm ci
+npm run build
+```
+
+Then start the API with `STATIC_DIR` set to the build output, for example from `backend/`:
+
+```bash
+STATIC_DIR=../frontend/dist go run .
+```
+
+`STATIC_DIR` must name an existing directory that contains `index.html`; otherwise the server stops at startup. When `STATIC_DIR` is unset (local development with `npm run dev` and its `/api` proxy), no static file is served and the API behaves as before.
+
+With `STATIC_DIR` set, a request is handled as follows:
+
+| Request | Response |
+|---|---|
+| `/api` and any path below it, `/health`, `/ready` | The API, unchanged. An unknown `/api` path still answers the `404 NOT_FOUND` JSON envelope, never `index.html` |
+| `GET` or `HEAD` of a file in `STATIC_DIR` | That file |
+| `GET` or `HEAD` of a path without an extension (a route of the React application, such as `/products`) | `index.html` |
+| `GET` or `HEAD` of a missing path with an extension (such as `/assets/missing.js`) | `404 NOT_FOUND` JSON envelope |
+| Any other method on a path outside the API | `404 NOT_FOUND` JSON envelope |
+
+Files are read through a directory handle rooted at `STATIC_DIR` (`os.Root`), so no path, whether through `..`, an encoded variant or a symbolic link, can read a file outside it. Files under `/assets/` (named with a content hash by Vite) are sent with `Cache-Control: public, max-age=31536000, immutable`; `index.html` and the other files with `Cache-Control: no-cache`. Every static file carries `X-Content-Type-Options: nosniff`.
+
+#### Registration on the login screen
+
+The login screen shows self-registration only when the frontend is built with `VITE_ALLOW_REGISTRATION=true`; it is hidden by default. The flag is read at build time:
+
+```bash
+VITE_ALLOW_REGISTRATION=true npm run build
+```
+
+Enable it together with `ALLOW_REGISTRATION=true` on the backend. With only the frontend flag, the form is shown but the API answers `403 REGISTRATION_DISABLED`; with only the backend flag, the endpoint is open but the screen does not offer it.
+
 ## Environment Variables
 
 | Variable | Required | Description |
@@ -433,6 +474,13 @@ The application initializes its dependencies, connects to PostgreSQL, starts the
 | `ALLOW_REGISTRATION` | No | Whether `POST /api/v1/auth/register` may create accounts: `true` or `false`, defaults to `false`. Any other value stops startup. When `false`, the endpoint answers `403 REGISTRATION_DISABLED`; administrators are created with `gostock admin create` |
 | `COOKIE_SAMESITE` | No | Cookie SameSite policy: `lax`, `strict`, or `none` |
 | `CORS_ALLOWED_ORIGINS` | Conditional | Comma-separated list of allowed browser origins |
+| `STATIC_DIR` | No | Directory of the built frontend (`frontend/dist`) that the API server also serves. Unset means no static files. If set, it must not be empty or have leading or trailing whitespace, and must name an existing directory that contains `index.html`; otherwise startup fails. See [Serve the frontend from the API](#7-serve-the-frontend-from-the-api-single-address) |
+
+The frontend reads one build-time variable:
+
+| Variable | Default | Description |
+|---|---|---|
+| `VITE_ALLOW_REGISTRATION` | unset (hidden) | `true` shows self-registration on the login screen; any other value hides it. Set it only together with `ALLOW_REGISTRATION=true` on the backend |
 
 Supported application environments:
 
@@ -468,6 +516,7 @@ openssl rand -base64 48
 
 - `COOKIE_SAMESITE=none` requires `Secure=true`, whether it comes from the default or from `COOKIE_SECURE`; otherwise startup fails.
 - Self-registration is off unless `ALLOW_REGISTRATION=true`.
+- When the API serves the frontend (`STATIC_DIR`) in production, set `CORS_ALLOWED_ORIGINS` to the application's own HTTPS address (for example `https://gostock.example.com`). Browsers send an `Origin` header with every `POST`, `PUT`, `PATCH` and `DELETE`, even to the same address, and the API rejects writes from origins that are not listed with `403`, so login would fail otherwise.
 
 These defaults are intended for local development only. Configure explicit secrets, origins, and cookie settings before deployment.
 
