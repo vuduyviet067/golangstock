@@ -1,0 +1,28 @@
+# Build context for the Dockerfile: sources only. No VCS data, no local
+# dependencies or build output, no secrets.
+.git
+.github
+.vscode
+.idea
+
+**/node_modules
+frontend/dist
+
+# Local configuration and secrets. A frontend .env.* could also set
+# VITE_ALLOW_REGISTRATION at build time.
+.env
+**/.env
+**/.env.*
+!**/.env.example
+
+# Logs, temporary files and local build artifacts.
+*.log
+**/*.log
+**/tmp
+**/temp
+**/.tmp
+**/*.tmp
+backend/gostock
+backend/*.exe
+backend/coverage.out
+backend/coverage.html

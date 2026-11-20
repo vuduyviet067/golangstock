@@ -520,6 +520,54 @@ openssl rand -base64 48
 
 These defaults are intended for local development only. Configure explicit secrets, origins, and cookie settings before deployment.
 
+## Deploy (Render + Neon)
+
+### How it works
+
+The application ships as **one Docker image** and runs at **one address**:
+
+- `Dockerfile` (repository root) builds the frontend with Node (`npm ci`, `npm run build`, without `VITE_ALLOW_REGISTRATION`, so the login screen has no registration), builds a static Go binary (`CGO_ENABLED=0`, time zone database embedded), and copies both into `gcr.io/distroless/static-debian12:nonroot`: the binary at `/app/gostock`, the frontend at `/app/web`, with `STATIC_DIR=/app/web`. The container runs as the `nonroot` user.
+- The Go server answers the API (`/api/...`, `/health`, `/ready`) and serves the frontend from the same address, so the `SameSite=Lax` cookies need no cross-site setup.
+- `render.yaml` (Render Blueprint) describes one web service: Docker runtime, free plan, Singapore region, deployed after a commit to `master` only once its CI checks pass (`autoDeployTrigger: checksPass`), health check on `/health`.
+- PostgreSQL runs on Neon. The server never runs migrations: migrations and the first administrator (`gostock admin create`) are run from a developer machine against the Neon database.
+- CI job `docker-image` builds the image on every pull request and push to `master`, runs `gostock admin --help` inside it, and checks that `/app/web/index.html` and the assets are present. The image is never pushed to a registry.
+
+Base images, pinned by tag and digest, each published at least 14 days before it was chosen:
+
+| Stage | Image |
+|---|---|
+| Frontend build | `node:22.23.4-bookworm-slim` (Node 22 LTS, the major version CI uses) |
+| Backend build | `golang:1.27.3-bookworm` (the version in `backend/go.mod`) |
+| Runtime | `gcr.io/distroless/static-debian12:nonroot` |
+
+### Production environment variables
+
+| Variable | Example | Required | Set by |
+|---|---|---|---|
+| `APP_ENV` | `production` | Yes | `render.yaml` |
+| `HTTP_PORT` | `10000` | Yes on Render (the server defaults to `8080`; Render's default port is `10000`) | `render.yaml` |
+| `STATIC_DIR` | `/app/web` | Yes, for one address | `Dockerfile` |
+| `ALLOW_REGISTRATION` | `false` | No (defaults to `false`) | `render.yaml` |
+| `JWT_SECRET` | random, base64-encoded 256-bit value | Yes: at least 32 bytes, not the development secret, no surrounding whitespace | `render.yaml` (`generateValue`, created only if it does not exist yet) |
+| `DATABASE_URL` | `postgres://USER:PASSWORD@ep-example-123456.ap-southeast-1.aws.neon.tech/gostock?sslmode=require` | Yes | Render dashboard |
+| `EXPECTED_DATABASE_NAME` | `gostock` | No, but recommended: the server refuses to start on any other database | Render dashboard |
+| `CORS_ALLOWED_ORIGINS` | `https://gostock.onrender.com` | Yes in production: HTTPS only, no wildcard, no localhost | Render dashboard |
+| `COOKIE_SECURE` | unset (`true` in production) | No; `false` is rejected in production | not set |
+| `COOKIE_SAMESITE` | unset (`lax`) | No | not set |
+| `JWT_ISSUER`, `JWT_AUDIENCE`, `ACCESS_TOKEN_TTL_MINUTES`, `REFRESH_TOKEN_TTL_DAYS`, `REFRESH_TOKEN_GRACE_PERIOD` | unset (defaults) | No | not set |
+
+`VITE_ALLOW_REGISTRATION` is a frontend build-time variable; the `Dockerfile` does not set it, and the `.dockerignore` keeps local `.env` files out of the build.
+
+Values marked `sync: false` in `render.yaml` (`DATABASE_URL`, `EXPECTED_DATABASE_NAME`, `CORS_ALLOWED_ORIGINS`) are entered in the dashboard. Render asks for them only when the Blueprint is first created; later changes are made on the service's Environment page. No secret is stored in the repository.
+
+### Notes
+
+- **Neon connection string**: use the **direct** connection string (host without `-pooler`), with `sslmode=require`. The pgx driver caches prepared statements by default, which does not work through Neon's PgBouncer pooler. Prefer a Neon project in the Singapore region (`ap-southeast-1`), next to the Render service.
+- **`EXPECTED_DATABASE_NAME`** must be exactly the database name in the Neon connection string (the path after the host, for example `gostock`). The server checks `current_database()` at startup and exits on a mismatch.
+- **`CORS_ALLOWED_ORIGINS`** must be exactly the app's own HTTPS address as the browser shows it, without a trailing slash, for example `https://gostock.onrender.com`. Browsers send `Origin` with every write request even to the same address, so login fails with `403` if it differs. The `onrender.com` subdomain is assigned when the service is created and may differ from the service name; if it does, correct the value on the Environment page and redeploy.
+- **Free plan**: the service spins down after 15 minutes without inbound traffic, and the next request waits for it to start again (about a minute). Local files do not persist; the application keeps none.
+- **Health check**: Render calls `GET /health`, which does not touch the database. `GET /ready` checks the database and can be used manually.
+
 ## API Response Format
 
 The API uses a standardized response envelope, written by the shared package `backend/pkg/response`:
