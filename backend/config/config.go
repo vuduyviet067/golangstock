@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -113,6 +114,44 @@ func LoadExpectedDatabaseName() (string, error) {
 	return name, nil
 }
 
+// LoadStaticDir reads STATIC_DIR, the directory of the built frontend (the
+// output of npm run build) that the API server also serves, so that the
+// application and its API share one origin. Unset means no static files are
+// served. A set value must be non-empty, free of leading or trailing
+// whitespace, and name an existing directory that contains an index.html
+// file; it is returned cleaned (filepath.Clean).
+func LoadStaticDir() (string, error) {
+	dir, set := os.LookupEnv("STATIC_DIR")
+	if !set {
+		return "", nil
+	}
+	if strings.TrimSpace(dir) == "" {
+		return "", errors.New("STATIC_DIR is set but empty; unset it or set it to the directory of the built frontend")
+	}
+	if dir != strings.TrimSpace(dir) {
+		return "", errors.New("STATIC_DIR cannot contain leading or trailing whitespace")
+	}
+	dir = filepath.Clean(dir)
+
+	info, err := os.Stat(dir)
+	if err != nil {
+		return "", fmt.Errorf("STATIC_DIR %q: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("STATIC_DIR %q is not a directory", dir)
+	}
+
+	index := filepath.Join(dir, "index.html")
+	info, err = os.Stat(index)
+	if err != nil {
+		return "", fmt.Errorf("STATIC_DIR %q must contain index.html: %w", dir, err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("STATIC_DIR %q must contain index.html as a regular file", dir)
+	}
+	return dir, nil
+}
+
 func resolveEnvironment() (string, error) {
 	rawAppEnv := strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
 	rawEnv := strings.ToLower(strings.TrimSpace(os.Getenv("ENV")))
@@ -142,6 +181,14 @@ func Load() (dto.AppConfig, error) {
 
 	expectedDatabaseName, err := LoadExpectedDatabaseName()
 	if err != nil {
+		return dto.AppConfig{}, err
+	}
+
+	// STATIC_DIR is checked here so that a wrong value stops the process at
+	// startup, before the database is opened. AppConfig has no field for it:
+	// internal/app reads it again with LoadStaticDir when it builds the
+	// handler.
+	if _, err := LoadStaticDir(); err != nil {
 		return dto.AppConfig{}, err
 	}
 

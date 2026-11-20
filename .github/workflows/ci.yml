@@ -200,3 +200,48 @@ jobs:
 
       - name: Dashboard tests (UTC, America/Santiago, Pacific/Kiritimati)
         run: npm run test:dashboard
+
+  docker-image:
+    # DEP-03: the deployment image builds, its binary runs, and it carries the
+    # built frontend. The image is never pushed.
+    name: Docker image (build, binary, frontend)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -t gostock:ci .
+
+      - name: Image runs as nonroot with STATIC_DIR=/app/web
+        run: |
+          user=$(docker image inspect --format '{{.Config.User}}' gostock:ci)
+          env=$(docker image inspect --format '{{json .Config.Env}}' gostock:ci)
+          echo "user=$user env=$env"
+          if [ "$user" != nonroot ] || ! grep -q '"STATIC_DIR=/app/web"' <<< "$env"; then
+            echo "::error::expected USER nonroot and STATIC_DIR=/app/web"
+            exit 1
+          fi
+
+      - name: The binary runs in the image
+        # admin --help prints the usage and exits 0 without a database.
+        run: |
+          docker run --rm gostock:ci admin --help | tee "$RUNNER_TEMP/admin-help.txt"
+          grep -q 'gostock admin create --email' "$RUNNER_TEMP/admin-help.txt"
+
+      - name: The image carries the built frontend
+        run: |
+          id=$(docker create gostock:ci)
+          trap 'docker rm "$id" > /dev/null' EXIT
+          mkdir -p "$RUNNER_TEMP/web"
+          docker cp "$id:/app/web/index.html" "$RUNNER_TEMP/web/index.html"
+          docker cp "$id:/app/web/assets" "$RUNNER_TEMP/web/assets"
+          grep -qi '<!doctype html>' "$RUNNER_TEMP/web/index.html"
+          ls -l "$RUNNER_TEMP/web/assets"
+          ls "$RUNNER_TEMP/web/assets"/*.js > /dev/null
+          # DEP-02: the default build has no registration on the login screen.
+          if grep -l -e 'auth-tabs' -e 'auth-footer-help' "$RUNNER_TEMP/web/assets"/*.js; then
+            echo "::error::the frontend in the image offers registration (VITE_ALLOW_REGISTRATION was set)"
+            exit 1
+          fi
+          echo "index.html and $(ls "$RUNNER_TEMP/web/assets" | wc -l) asset files found; no registration UI"

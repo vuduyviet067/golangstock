@@ -8,9 +8,11 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
+	"gostock/config"
 	"gostock/internal/dto"
 	productHTTP "gostock/internal/handle/http"
 	"gostock/internal/platform/database"
@@ -28,6 +30,7 @@ const databasePreflightTimeout = 5 * time.Second
 type App struct {
 	server          *http.Server
 	db              *sql.DB
+	staticRoot      *os.Root // STATIC_DIR, nil when no static files are served
 	shutdownTimeout time.Duration
 	readyCh         chan struct{}                   // optional channel closed when network listener is bound
 	shutdownFunc    func(ctx context.Context) error // optional test seam to simulate shutdown failure
@@ -50,9 +53,26 @@ func newApp(cfg dto.AppConfig, opener dbOpener, postDBHook func(db *sql.DB) erro
 		return nil, fmt.Errorf("initialize jwt service: %w", err)
 	}
 
+	// Static files (STATIC_DIR, optional), also before the database. The
+	// directory is opened as an os.Root: no request can read outside it.
+	staticDir, err := config.LoadStaticDir()
+	if err != nil {
+		return nil, fmt.Errorf("load static files: %w", err)
+	}
+	var staticRoot *os.Root
+	if staticDir != "" {
+		staticRoot, err = os.OpenRoot(staticDir)
+		if err != nil {
+			return nil, fmt.Errorf("open static files: %w", err)
+		}
+	}
+
 	// 2. Open PostgreSQL connection pool
 	db, err := opener(cfg.DatabaseURL)
 	if err != nil {
+		if staticRoot != nil {
+			_ = staticRoot.Close()
+		}
 		return nil, fmt.Errorf("connect to database: %w", err)
 	}
 
@@ -61,6 +81,9 @@ func newApp(cfg dto.AppConfig, opener dbOpener, postDBHook func(db *sql.DB) erro
 	defer func() {
 		if !success && db != nil {
 			_ = db.Close()
+		}
+		if !success && staticRoot != nil {
+			_ = staticRoot.Close()
 		}
 	}()
 
@@ -116,7 +139,12 @@ func newApp(cfg dto.AppConfig, opener dbOpener, postDBHook func(db *sql.DB) erro
 
 	// 6. Construct router and middleware
 	router := NewRouter(db, productHandler, authHandler, authUseCase, userHandler, stockMovementHandler, dashboardHandler)
-	handler := productHTTP.CORSMiddleware(cfg.AllowedOrigins)(router)
+	var inner http.Handler = router
+	if staticRoot != nil {
+		inner = newStaticHandler(router, staticRoot.FS())
+		slog.Info("serving static files", slog.String("dir", staticDir))
+	}
+	handler := productHTTP.CORSMiddleware(cfg.AllowedOrigins)(inner)
 
 	// 7. Configure HTTP server with production-grade timeouts
 	server := &http.Server{
@@ -132,6 +160,7 @@ func newApp(cfg dto.AppConfig, opener dbOpener, postDBHook func(db *sql.DB) erro
 	return &App{
 		server:          server,
 		db:              db,
+		staticRoot:      staticRoot,
 		shutdownTimeout: defaultShutdownTimeout,
 	}, nil
 }
@@ -272,6 +301,10 @@ func (a *App) Close() error {
 		return nil
 	}
 	a.closed = true
+
+	if a.staticRoot != nil {
+		_ = a.staticRoot.Close() // read-only directory handle
+	}
 
 	if a.db != nil {
 		if err := a.db.Close(); err != nil {

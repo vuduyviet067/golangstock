@@ -2,9 +2,14 @@ import { useState, type FormEvent } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { ApiError } from '../types/api';
 
+// Self-registration is shown only when the build sets VITE_ALLOW_REGISTRATION=true,
+// which must go together with ALLOW_REGISTRATION=true on the backend. Hidden by default.
+const ALLOW_REGISTRATION = import.meta.env.VITE_ALLOW_REGISTRATION === 'true';
+
 export function LoginView() {
   const { login, register } = useAuth();
-  const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [registerModeSelected, setIsRegisterMode] = useState(false);
+  const isRegisterMode = ALLOW_REGISTRATION && registerModeSelected;
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -105,29 +110,31 @@ export function LoginView() {
           </p>
         </div>
 
-        {/* Mode switch tabs */}
-        <div className="auth-tabs" role="tablist">
-          <button
-            type="button"
-            className={`auth-tab ${!isRegisterMode ? 'active' : ''}`}
-            onClick={() => !isSubmitting && isRegisterMode && toggleMode()}
-            disabled={isSubmitting}
-            role="tab"
-            aria-selected={!isRegisterMode}
-          >
-            Đăng nhập
-          </button>
-          <button
-            type="button"
-            className={`auth-tab ${isRegisterMode ? 'active' : ''}`}
-            onClick={() => !isSubmitting && !isRegisterMode && toggleMode()}
-            disabled={isSubmitting}
-            role="tab"
-            aria-selected={isRegisterMode}
-          >
-            Đăng ký
-          </button>
-        </div>
+        {/* Mode switch tabs (only when registration is enabled) */}
+        {ALLOW_REGISTRATION && (
+          <div className="auth-tabs" role="tablist">
+            <button
+              type="button"
+              className={`auth-tab ${!isRegisterMode ? 'active' : ''}`}
+              onClick={() => !isSubmitting && isRegisterMode && toggleMode()}
+              disabled={isSubmitting}
+              role="tab"
+              aria-selected={!isRegisterMode}
+            >
+              Đăng nhập
+            </button>
+            <button
+              type="button"
+              className={`auth-tab ${isRegisterMode ? 'active' : ''}`}
+              onClick={() => !isSubmitting && !isRegisterMode && toggleMode()}
+              disabled={isSubmitting}
+              role="tab"
+              aria-selected={isRegisterMode}
+            >
+              Đăng ký
+            </button>
+          </div>
+        )}
 
         {/* Error / Success Notice */}
         {apiError && (
@@ -207,19 +214,21 @@ export function LoginView() {
           </button>
         </form>
 
-        <div className="auth-footer-help">
-          <span>
-            {isRegisterMode ? 'Đã có tài khoản?' : 'Chưa có tài khoản?'}
-          </span>{' '}
-          <button
-            type="button"
-            className="auth-link-btn"
-            onClick={toggleMode}
-            disabled={isSubmitting}
-          >
-            {isRegisterMode ? 'Đăng nhập ngay' : 'Đăng ký tài khoản'}
-          </button>
-        </div>
+        {ALLOW_REGISTRATION && (
+          <div className="auth-footer-help">
+            <span>
+              {isRegisterMode ? 'Đã có tài khoản?' : 'Chưa có tài khoản?'}
+            </span>{' '}
+            <button
+              type="button"
+              className="auth-link-btn"
+              onClick={toggleMode}
+              disabled={isSubmitting}
+            >
+              {isRegisterMode ? 'Đăng nhập ngay' : 'Đăng ký tài khoản'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

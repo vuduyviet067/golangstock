@@ -414,6 +414,47 @@ Set `HTTP_PORT` to use another valid port.
 
 The application initializes its dependencies, connects to PostgreSQL, starts the HTTP server, and handles graceful shutdown signals.
 
+### 7. Serve the frontend from the API (single address)
+
+For a deployment, the API server can also serve the built frontend, so the application and its API share one address. The authentication cookies (`SameSite=Lax`) then work without any cross-site configuration.
+
+Build the frontend from `frontend/`:
+
+```bash
+npm ci
+npm run build
+```
+
+Then start the API with `STATIC_DIR` set to the build output, for example from `backend/`:
+
+```bash
+STATIC_DIR=../frontend/dist go run .
+```
+
+`STATIC_DIR` must name an existing directory that contains `index.html`; otherwise the server stops at startup. When `STATIC_DIR` is unset (local development with `npm run dev` and its `/api` proxy), no static file is served and the API behaves as before.
+
+With `STATIC_DIR` set, a request is handled as follows:
+
+| Request | Response |
+|---|---|
+| `/api` and any path below it, `/health`, `/ready` | The API, unchanged. An unknown `/api` path still answers the `404 NOT_FOUND` JSON envelope, never `index.html` |
+| `GET` or `HEAD` of a file in `STATIC_DIR` | That file |
+| `GET` or `HEAD` of a path without an extension (a route of the React application, such as `/products`) | `index.html` |
+| `GET` or `HEAD` of a missing path with an extension (such as `/assets/missing.js`) | `404 NOT_FOUND` JSON envelope |
+| Any other method on a path outside the API | `404 NOT_FOUND` JSON envelope |
+
+Files are read through a directory handle rooted at `STATIC_DIR` (`os.Root`), so no path, whether through `..`, an encoded variant or a symbolic link, can read a file outside it. Files under `/assets/` (named with a content hash by Vite) are sent with `Cache-Control: public, max-age=31536000, immutable`; `index.html` and the other files with `Cache-Control: no-cache`. Every static file carries `X-Content-Type-Options: nosniff`.
+
+#### Registration on the login screen
+
+The login screen shows self-registration only when the frontend is built with `VITE_ALLOW_REGISTRATION=true`; it is hidden by default. The flag is read at build time:
+
+```bash
+VITE_ALLOW_REGISTRATION=true npm run build
+```
+
+Enable it together with `ALLOW_REGISTRATION=true` on the backend. With only the frontend flag, the form is shown but the API answers `403 REGISTRATION_DISABLED`; with only the backend flag, the endpoint is open but the screen does not offer it.
+
 ## Environment Variables
 
 | Variable | Required | Description |
@@ -433,6 +474,13 @@ The application initializes its dependencies, connects to PostgreSQL, starts the
 | `ALLOW_REGISTRATION` | No | Whether `POST /api/v1/auth/register` may create accounts: `true` or `false`, defaults to `false`. Any other value stops startup. When `false`, the endpoint answers `403 REGISTRATION_DISABLED`; administrators are created with `gostock admin create` |
 | `COOKIE_SAMESITE` | No | Cookie SameSite policy: `lax`, `strict`, or `none` |
 | `CORS_ALLOWED_ORIGINS` | Conditional | Comma-separated list of allowed browser origins |
+| `STATIC_DIR` | No | Directory of the built frontend (`frontend/dist`) that the API server also serves. Unset means no static files. If set, it must not be empty or have leading or trailing whitespace, and must name an existing directory that contains `index.html`; otherwise startup fails. See [Serve the frontend from the API](#7-serve-the-frontend-from-the-api-single-address) |
+
+The frontend reads one build-time variable:
+
+| Variable | Default | Description |
+|---|---|---|
+| `VITE_ALLOW_REGISTRATION` | unset (hidden) | `true` shows self-registration on the login screen; any other value hides it. Set it only together with `ALLOW_REGISTRATION=true` on the backend |
 
 Supported application environments:
 
@@ -468,8 +516,57 @@ openssl rand -base64 48
 
 - `COOKIE_SAMESITE=none` requires `Secure=true`, whether it comes from the default or from `COOKIE_SECURE`; otherwise startup fails.
 - Self-registration is off unless `ALLOW_REGISTRATION=true`.
+- When the API serves the frontend (`STATIC_DIR`) in production, set `CORS_ALLOWED_ORIGINS` to the application's own HTTPS address (for example `https://gostock.example.com`). Browsers send an `Origin` header with every `POST`, `PUT`, `PATCH` and `DELETE`, even to the same address, and the API rejects writes from origins that are not listed with `403`, so login would fail otherwise.
 
 These defaults are intended for local development only. Configure explicit secrets, origins, and cookie settings before deployment.
+
+## Deploy (Render + Neon)
+
+### How it works
+
+The application ships as **one Docker image** and runs at **one address**:
+
+- `Dockerfile` (repository root) builds the frontend with Node (`npm ci`, `npm run build`, without `VITE_ALLOW_REGISTRATION`, so the login screen has no registration), builds a static Go binary (`CGO_ENABLED=0`, time zone database embedded), and copies both into `gcr.io/distroless/static-debian12:nonroot`: the binary at `/app/gostock`, the frontend at `/app/web`, with `STATIC_DIR=/app/web`. The container runs as the `nonroot` user.
+- The Go server answers the API (`/api/...`, `/health`, `/ready`) and serves the frontend from the same address, so the `SameSite=Lax` cookies need no cross-site setup.
+- `render.yaml` (Render Blueprint) describes one web service: Docker runtime, free plan, Singapore region, deployed after a commit to `master` only once its CI checks pass (`autoDeployTrigger: checksPass`), health check on `/health`.
+- PostgreSQL runs on Neon. The server never runs migrations: migrations and the first administrator (`gostock admin create`) are run from a developer machine against the Neon database.
+- CI job `docker-image` builds the image on every pull request and push to `master`, runs `gostock admin --help` inside it, and checks that `/app/web/index.html` and the assets are present. The image is never pushed to a registry.
+
+Base images, pinned by tag and digest, each published at least 14 days before it was chosen:
+
+| Stage | Image |
+|---|---|
+| Frontend build | `node:22.23.4-bookworm-slim` (Node 22 LTS, the major version CI uses) |
+| Backend build | `golang:1.27.3-bookworm` (the version in `backend/go.mod`) |
+| Runtime | `gcr.io/distroless/static-debian12:nonroot` |
+
+### Production environment variables
+
+| Variable | Example | Required | Set by |
+|---|---|---|---|
+| `APP_ENV` | `production` | Yes | `render.yaml` |
+| `HTTP_PORT` | `10000` | Yes on Render (the server defaults to `8080`; Render's default port is `10000`) | `render.yaml` |
+| `STATIC_DIR` | `/app/web` | Yes, for one address | `Dockerfile` |
+| `ALLOW_REGISTRATION` | `false` | No (defaults to `false`) | `render.yaml` |
+| `JWT_SECRET` | random, base64-encoded 256-bit value | Yes: at least 32 bytes, not the development secret, no surrounding whitespace | `render.yaml` (`generateValue`, created only if it does not exist yet) |
+| `DATABASE_URL` | `postgres://USER:PASSWORD@ep-example-123456.ap-southeast-1.aws.neon.tech/gostock?sslmode=require` | Yes | Render dashboard |
+| `EXPECTED_DATABASE_NAME` | `gostock` | No, but recommended: the server refuses to start on any other database | Render dashboard |
+| `CORS_ALLOWED_ORIGINS` | `https://gostock.onrender.com` | Yes in production: HTTPS only, no wildcard, no localhost | Render dashboard |
+| `COOKIE_SECURE` | unset (`true` in production) | No; `false` is rejected in production | not set |
+| `COOKIE_SAMESITE` | unset (`lax`) | No | not set |
+| `JWT_ISSUER`, `JWT_AUDIENCE`, `ACCESS_TOKEN_TTL_MINUTES`, `REFRESH_TOKEN_TTL_DAYS`, `REFRESH_TOKEN_GRACE_PERIOD` | unset (defaults) | No | not set |
+
+`VITE_ALLOW_REGISTRATION` is a frontend build-time variable; the `Dockerfile` does not set it, and the `.dockerignore` keeps local `.env` files out of the build.
+
+Values marked `sync: false` in `render.yaml` (`DATABASE_URL`, `EXPECTED_DATABASE_NAME`, `CORS_ALLOWED_ORIGINS`) are entered in the dashboard. Render asks for them only when the Blueprint is first created; later changes are made on the service's Environment page. No secret is stored in the repository.
+
+### Notes
+
+- **Neon connection string**: use the **direct** connection string (host without `-pooler`), with `sslmode=require`. The pgx driver caches prepared statements by default, which does not work through Neon's PgBouncer pooler. Prefer a Neon project in the Singapore region (`ap-southeast-1`), next to the Render service.
+- **`EXPECTED_DATABASE_NAME`** must be exactly the database name in the Neon connection string (the path after the host, for example `gostock`). The server checks `current_database()` at startup and exits on a mismatch.
+- **`CORS_ALLOWED_ORIGINS`** must be exactly the app's own HTTPS address as the browser shows it, without a trailing slash, for example `https://gostock.onrender.com`. Browsers send `Origin` with every write request even to the same address, so login fails with `403` if it differs. The `onrender.com` subdomain is assigned when the service is created and may differ from the service name; if it does, correct the value on the Environment page and redeploy.
+- **Free plan**: the service spins down after 15 minutes without inbound traffic, and the next request waits for it to start again (about a minute). Local files do not persist; the application keeps none.
+- **Health check**: Render calls `GET /health`, which does not touch the database. `GET /ready` checks the database and can be used manually.
 
 ## API Response Format
 

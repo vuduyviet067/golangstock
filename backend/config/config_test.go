@@ -37,6 +37,7 @@ var configEnvVars = []string{
 	"COOKIE_SAMESITE",
 	"CORS_ALLOWED_ORIGINS",
 	"ALLOW_REGISTRATION",
+	"STATIC_DIR",
 }
 
 func clearConfigEnv(t *testing.T) {
