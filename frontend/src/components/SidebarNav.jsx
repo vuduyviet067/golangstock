@@ -11,7 +11,7 @@ export function SidebarNav({ tabs, activeTab, onChange, onActivate }) {
         </span>
         <span className="sidebar-brand-text">
           <span className="sidebar-brand-name">GoStock</span>
-          <span className="sidebar-brand-tagline">Kho &amp; kinh doanh gỗ</span>
+          <span className="sidebar-brand-tagline">Quản lý kho hàng</span>
         </span>
       </div>
 
